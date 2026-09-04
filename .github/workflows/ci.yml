@@ -10,10 +10,13 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Neovim (stable)
+        # NOTE: $GITHUB_PATH only takes effect in *later* steps, so verify
+        # with the absolute path here.
         run: |
           curl -sL https://github.com/neovim/neovim/releases/latest/download/nvim-linux-x86_64.tar.gz | tar xz -C /tmp
+          test -x /tmp/nvim-linux-x86_64/bin/nvim
           echo /tmp/nvim-linux-x86_64/bin >> "$GITHUB_PATH"
-          nvim --version
+          /tmp/nvim-linux-x86_64/bin/nvim --version
 
       - name: Install plenary.nvim (test dependency)
         run: |
@@ -21,11 +24,13 @@ jobs:
           git clone --depth 1 https://github.com/nvim-lua/plenary.nvim ~/.local/share/nvim/site/pack/core/opt/plenary.nvim
 
       - name: Install StyLua
+        # NOTE: same $GITHUB_PATH caveat as above — absolute path here.
         run: |
           curl -sL https://github.com/JohnnyMorganz/StyLua/releases/latest/download/stylua-linux-x86_64.zip -o /tmp/stylua.zip
           unzip -o /tmp/stylua.zip -d /tmp/stylua
+          test -x /tmp/stylua/stylua
           echo /tmp/stylua >> "$GITHUB_PATH"
-          stylua --version
+          /tmp/stylua/stylua --version
 
       - name: Tests (headless plenary-busted)
         run: make test
