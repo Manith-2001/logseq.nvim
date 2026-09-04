@@ -16,8 +16,11 @@ local defaults = {
   picker = 'telescope',
 }
 
----@type LogseqConfig
-local current = vim.deepcopy(defaults)
+--- Explicit opts from setup() calls (highest precedence layer).
+--- Stored separately from vim.g.logseq so get() can merge the live
+--- g: value on every call; setup() is therefore optional, never required.
+---@type table
+local explicit_opts = {}
 
 ---@type string[] unknown keys seen across setup() calls (surfaced via health)
 local unknown_keys = {}
@@ -41,17 +44,17 @@ local function warn_unknown(opts)
 end
 
 --- Merge user opts over defaults (+ vim.g.logseq base). Idempotent, 0..n calls.
+--- setup() is optional: get() already layers vim.g.logseq over defaults,
+--- so a bare `vim.g.logseq = {...}` (or nothing at all) is a valid config.
 ---@param opts LogseqConfig|nil
 function M.setup(opts)
   opts = opts or {}
-  local g = vim.g.logseq
-  local base = vim.deepcopy(defaults)
-  if type(g) == 'table' then
-    warn_unknown(g)
-    base = vim.tbl_deep_extend('force', base, g)
-  end
   warn_unknown(opts)
-  current = vim.tbl_deep_extend('force', base, opts)
+  if type(vim.g.logseq) == 'table' then
+    warn_unknown(vim.g.logseq)
+  end
+  explicit_opts = vim.deepcopy(opts)
+  local current = M.get()
   pcall(vim.validate, {
     graph_path = { current.graph_path, { 'string', 'nil' } },
     pages_dir = { current.pages_dir, 'string' },
@@ -62,10 +65,17 @@ function M.setup(opts)
   return current
 end
 
---- Read-only snapshot of effective config.
+--- Read-only snapshot of effective config, recomputed per call so a bare
+--- vim.g.logseq (no setup() call) is honored. Precedence, low to high:
+--- defaults < vim.g.logseq < setup(opts).
 ---@return LogseqConfig
 function M.get()
-  return vim.deepcopy(current)
+  local merged = vim.deepcopy(defaults)
+  local g = vim.g.logseq
+  if type(g) == 'table' then
+    merged = vim.tbl_deep_extend('force', merged, g)
+  end
+  return vim.tbl_deep_extend('force', merged, explicit_opts)
 end
 
 --- Unknown keys accumulated for health.lua to report (not a hard error).
@@ -79,7 +89,7 @@ function M._defaults()
 end
 
 function M._reset()
-  current = vim.deepcopy(defaults)
+  explicit_opts = {}
   unknown_keys = {}
 end
 

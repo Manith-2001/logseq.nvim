@@ -5,10 +5,16 @@ local repo = vim.fn.fnamemodify(debug.getinfo(1, 'S').source:sub(2), ':p:h:h')
 local fixture = repo .. '/tests/fixtures/graph'
 
 describe('graph.find_root (M1)', function()
+  local saved_g
   before_each(function()
+    -- Hermetic: minimal_init.lua pre-seeds vim.g.logseq, and get() now
+    -- honors g: without setup(), so clear it per test (restore after).
+    saved_g = vim.g.logseq
+    vim.g.logseq = nil
     config._reset()
   end)
   after_each(function()
+    vim.g.logseq = saved_g
     config._reset()
   end)
 
@@ -42,10 +48,16 @@ describe('graph.find_root (M1)', function()
 end)
 
 describe('graph.list_pages (M1)', function()
+  local saved_g
   before_each(function()
+    -- Hermetic: minimal_init.lua pre-seeds vim.g.logseq, and get() now
+    -- honors g: without setup(), so clear it per test (restore after).
+    saved_g = vim.g.logseq
+    vim.g.logseq = nil
     config._reset()
   end)
   after_each(function()
+    vim.g.logseq = saved_g
     config._reset()
   end)
 

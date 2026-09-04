@@ -5,10 +5,15 @@ local repo = vim.fn.fnamemodify(debug.getinfo(1, 'S').source:sub(2), ':p:h:h')
 local fixture = repo .. '/tests/fixtures/graph'
 
 describe('page.title_to_path (M1)', function()
+  local saved_g
   before_each(function()
+    -- Hermetic: minimal_init.lua pre-seeds vim.g.logseq; clear per test.
+    saved_g = vim.g.logseq
+    vim.g.logseq = nil
     config._reset()
   end)
   after_each(function()
+    vim.g.logseq = saved_g
     config._reset()
   end)
 
