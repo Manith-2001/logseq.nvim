@@ -1,0 +1,10 @@
+local parser = require('logseq.parser')
+
+describe('parser.links_in_line (M0 smoke)', function()
+  it('finds a single [[wikilink]]', function()
+    local links = parser.links_in_line('- Hello [[World]]')
+    assert.are.equal(1, #links)
+    assert.are.equal('World', links[1].text)
+    assert.are.equal('wikilink', links[1].kind)
+  end)
+end)
