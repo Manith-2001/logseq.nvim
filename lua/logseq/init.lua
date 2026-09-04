@@ -1,5 +1,4 @@
---- Public facade. M1: find_files() is real; follow lands in M2,
---- today()/new_page() in M3.
+--- Public facade. M1: find_files(); M2: follow_link(); M3: today()/new_page().
 local config = require('logseq.config')
 
 local M = {}
@@ -45,8 +44,39 @@ function M.find_files(opts)
   })
 end
 
-function M.follow_link(_opts)
-  not_yet(':LogseqFollow (M2)')
+--- Follow the [[link]] / #[[link]] / #tag under the cursor.
+--- Opens lazily via page.open_lazy: missing pages open as empty buffers
+--- and no file is created until content is written (dangling refs).
+--- opts.root overrides root resolution (used by tests); otherwise
+--- graph.find_root() applies (config.graph_path, else upward search).
+---@param opts table|nil
+function M.follow_link(opts)
+  opts = opts or {}
+  local graph = require('logseq.graph')
+  local parser = require('logseq.parser')
+  local page = require('logseq.page')
+  local root = (type(opts.root) == 'string' and opts.root ~= '') and opts.root or graph.find_root()
+  if not root then
+    vim.notify(
+      'logseq.nvim: graph root not found (set graph_path or open a file inside the graph)',
+      vim.log.levels.ERROR
+    )
+    return
+  end
+  local ok, line = pcall(vim.api.nvim_get_current_line)
+  if not ok then
+    return
+  end
+  -- nvim_win_get_cursor col is 0-based; the parser uses 1-based cols.
+  local col = vim.api.nvim_win_get_cursor(0)[2] + 1
+  local link = parser.link_under_cursor(line, col)
+  if not link then
+    vim.notify('logseq.nvim: no link under cursor', vim.log.levels.WARN)
+    return
+  end
+  -- NOTE: '/' namespaces (title_to_path passes them through, so the path
+  -- may point under a missing subdir) are deferred to M4.
+  page.open_lazy(page.title_to_path(root, link.text))
 end
 
 function M.today(_opts)

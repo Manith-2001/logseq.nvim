@@ -1,4 +1,4 @@
---- Page title <-> path mapping (M1). Lazy open lands in M2 (open_lazy).
+--- Page title <-> path mapping (M1) + lazy open (M2).
 --- Escaping: spaces/case preserved verbatim per §8.1 discovery (no
 --- `:file-name-format` set, no namespace files in the reference graph).
 --- `/` handling deferred to M4.
@@ -23,6 +23,62 @@ end
 ---@return boolean
 function M.exists(path)
   return vim.fn.filereadable(path) == 1
+end
+
+--- True when every line of buf is blank (a dangling page with no content).
+---@param buf integer
+---@return boolean
+local function buf_is_blank(buf)
+  for _, line in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
+    if not line:match('^%s*$') then
+      return false
+    end
+  end
+  return true
+end
+
+--- Refuse `:w` on a dangling (never-existed) buffer that is still empty:
+--- Logseq deletes empty pages, so writing a 0-byte file would immediately
+--- diverge from the graph. Warn + abort the write; once the buffer has
+--- content (or the file exists) writes proceed normally.
+local function ensure_write_guard()
+  local group = vim.api.nvim_create_augroup('LogseqNvimWrite', { clear = true })
+  vim.api.nvim_create_autocmd('BufWritePre', {
+    group = group,
+    callback = function(args)
+      if vim.b[args.buf].logseq_dangling and not M.exists(args.file) and buf_is_blank(args.buf) then
+        vim.notify('logseq.nvim: not writing empty page (add content first)', vim.log.levels.WARN)
+        error('logseq.nvim: refusing to write empty page', 0)
+      end
+    end,
+    desc = 'Logseq: refuse :w on empty dangling page',
+  })
+  vim.api.nvim_create_autocmd('BufWritePost', {
+    group = group,
+    callback = function(args)
+      if M.exists(args.file) then
+        vim.b[args.buf].logseq_dangling = nil
+      end
+    end,
+    desc = 'Logseq: clear dangling flag once the page file exists',
+  })
+end
+
+--- Open path for editing without creating anything on disk (dangling-ref
+--- semantics): a missing page opens as an empty buffer; the file appears
+--- only after content is added and `:w` succeeds. Never writes.
+---@param path string absolute page path
+---@return integer bufnr of the opened buffer
+function M.open_lazy(path)
+  assert(type(path) == 'string' and path ~= '', 'page.open_lazy: path required')
+  ensure_write_guard()
+  vim.cmd('edit ' .. vim.fn.fnameescape(path))
+  vim.bo.filetype = 'markdown'
+  local buf = vim.api.nvim_get_current_buf()
+  if not M.exists(path) then
+    vim.b[buf].logseq_dangling = true
+  end
+  return buf
 end
 
 return M
