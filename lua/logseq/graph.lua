@@ -91,6 +91,21 @@ function M.find_root(startpath)
   return walk_up(startpath, cfg.pages_dir, cfg.journals_dir)
 end
 
+--- Nearest graph root at-or-above path, ignoring config.graph_path.
+--- For buffer-scoped questions ("is THIS file in a graph?") where the
+--- global override would give the wrong answer — e.g. after/ftplugin
+--- must not treat an unrelated markdown file as a graph page just
+--- because graph_path is set. Returns nil for '' / missing paths.
+---@param path string|nil file or dir
+---@return string|nil absolute root path
+function M.find_root_from(path)
+  if type(path) ~= 'string' or path == '' then
+    return nil
+  end
+  local cfg = config.get()
+  return walk_up(path, cfg.pages_dir, cfg.journals_dir)
+end
+
 --- List pages + journals (non-recursive, v0.1), sorted by title.
 --- Excludes hidden (dot-) files. Missing dirs scan as empty, not an error.
 ---@param root string absolute graph root

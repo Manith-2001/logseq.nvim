@@ -25,6 +25,19 @@ function M.exists(path)
   return vim.fn.filereadable(path) == 1
 end
 
+--- Canonical path for a journal stem under root's journals dir.
+--- The stem is normally os.date(config.journal_format), e.g. '2026_08_27'.
+---@param root string absolute graph root
+---@param stem string filename without .md, e.g. '2026_08_27'
+---@return string absolute path, e.g. '<root>/journals/2026_08_27.md'
+function M.journal_to_path(root, stem)
+  assert(type(root) == 'string' and root ~= '', 'page.journal_to_path: root required')
+  assert(type(stem) == 'string', 'page.journal_to_path: stem required')
+  local name = stem:match('^%s*(.-)%s*$')
+  assert(name ~= '', 'page.journal_to_path: stem must not be blank')
+  return root .. '/' .. config.get().journals_dir .. '/' .. name .. '.md'
+end
+
 --- True when every line of buf is blank (a dangling page with no content).
 ---@param buf integer
 ---@return boolean

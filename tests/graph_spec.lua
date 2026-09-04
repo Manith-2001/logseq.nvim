@@ -94,3 +94,46 @@ describe('graph.list_pages (M1)', function()
     assert.are.same({}, graph.list_pages('/tmp/no-such-logseq-graph-xyz'))
   end)
 end)
+
+describe('graph.find_root_from (M3)', function()
+  local saved_g
+  local tmps
+  before_each(function()
+    saved_g = vim.g.logseq
+    vim.g.logseq = nil
+    config._reset()
+    tmps = {}
+  end)
+  after_each(function()
+    for _, t in ipairs(tmps) do
+      vim.fn.delete(t, 'rf')
+    end
+    vim.g.logseq = saved_g
+    config._reset()
+  end)
+
+  it('locates the root from a nested file, ignoring config.graph_path', function()
+    config.setup({ graph_path = '/tmp' }) -- override points elsewhere...
+    -- ...yet the buffer-anchored search still finds the real graph.
+    assert.are.equal(fixture, graph.find_root_from(fixture .. '/pages/A.md'))
+  end)
+
+  it('returns nil outside any graph even with graph_path set', function()
+    config.setup({ graph_path = fixture })
+    assert.is_nil(graph.find_root_from('/tmp/no-such-logseq-graph-xyz/f.md'))
+  end)
+
+  it('detects a root via logseq/config.edn alone', function()
+    local tmp = vim.fn.tempname()
+    table.insert(tmps, tmp)
+    vim.fn.mkdir(tmp .. '/logseq', 'p')
+    vim.fn.writefile({ '{:x 1}' }, tmp .. '/logseq/config.edn')
+    -- walk_up does not resolve symlinks, so expect tmp verbatim.
+    assert.are.equal(tmp, graph.find_root_from(tmp .. '/logseq/config.edn'))
+  end)
+
+  it('is nil-safe', function()
+    assert.is_nil(graph.find_root_from(nil))
+    assert.is_nil(graph.find_root_from(''))
+  end)
+end)

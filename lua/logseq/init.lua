@@ -9,11 +9,21 @@ function M.setup(opts)
   return config.setup(opts)
 end
 
-local function not_yet(what)
-  vim.notify(
-    ('logseq.nvim: %s not yet implemented (see PLAN.md milestones)'):format(what),
-    vim.log.levels.WARN
-  )
+--- Shared root resolution: opts.root wins (tests), else graph.find_root().
+--- Notifies + returns nil when no root is found.
+---@param opts table
+---@return string|nil
+local function resolve_root(opts)
+  local graph = require('logseq.graph')
+  local root = (type(opts.root) == 'string' and opts.root ~= '') and opts.root or graph.find_root()
+  if not root then
+    vim.notify(
+      'logseq.nvim: graph root not found (set graph_path or open a file inside the graph)',
+      vim.log.levels.ERROR
+    )
+    return nil
+  end
+  return root
 end
 
 --- Find/open pages + journals via Telescope (vim.ui.select fallback).
@@ -22,16 +32,11 @@ end
 ---@param opts table|nil
 function M.find_files(opts)
   opts = opts or {}
-  local graph = require('logseq.graph')
-  local root = (type(opts.root) == 'string' and opts.root ~= '') and opts.root or graph.find_root()
+  local root = resolve_root(opts)
   if not root then
-    vim.notify(
-      'logseq.nvim: graph root not found (set graph_path or open a file inside the graph)',
-      vim.log.levels.ERROR
-    )
     return
   end
-  local items = graph.list_pages(root)
+  local items = require('logseq.graph').list_pages(root)
   if #items == 0 then
     vim.notify(('logseq.nvim: no pages found under %s'):format(root), vim.log.levels.WARN)
     return
@@ -52,17 +57,12 @@ end
 ---@param opts table|nil
 function M.follow_link(opts)
   opts = opts or {}
-  local graph = require('logseq.graph')
-  local parser = require('logseq.parser')
-  local page = require('logseq.page')
-  local root = (type(opts.root) == 'string' and opts.root ~= '') and opts.root or graph.find_root()
+  local root = resolve_root(opts)
   if not root then
-    vim.notify(
-      'logseq.nvim: graph root not found (set graph_path or open a file inside the graph)',
-      vim.log.levels.ERROR
-    )
     return
   end
+  local parser = require('logseq.parser')
+  local page = require('logseq.page')
   local ok, line = pcall(vim.api.nvim_get_current_line)
   if not ok then
     return
@@ -79,12 +79,59 @@ function M.follow_link(opts)
   page.open_lazy(page.title_to_path(root, link.text))
 end
 
-function M.today(_opts)
-  not_yet(':LogseqToday (M3)')
+--- Open today's journal (`journals/<os.date(journal_format)>.md`) lazily:
+--- a missing journal opens as an empty buffer, no file until content + `:w`.
+--- opts.root overrides root resolution (used by tests); opts.date
+--- (a filename stem like '2026_08_27') overrides os.date (used by tests).
+---@param opts table|nil
+function M.today(opts)
+  opts = opts or {}
+  local root = resolve_root(opts)
+  if not root then
+    return
+  end
+  local stem = opts.date
+  if type(stem) ~= 'string' or stem == '' then
+    stem = os.date(config.get().journal_format)
+  end
+  local page = require('logseq.page')
+  page.open_lazy(page.journal_to_path(root, stem))
 end
 
-function M.new_page(_opts)
-  not_yet(':LogseqNew (M3)')
+--- Open a (possibly new) page lazily via page.open_lazy.
+--- title may be a string, or the cmd_opts table from :LogseqNew
+--- (whose .args holds the title, '' when none was given). With no usable
+--- title the user is prompted via vim.ui.input; cancelling aborts quietly.
+---@param title string|table|nil
+---@param opts table|nil ({root=} override, used by tests)
+function M.new_page(title, opts)
+  if type(title) == 'table' then
+    if type(title.args) == 'string' and title.args ~= '' then
+      title = title.args -- :LogseqNew cmd_opts: .args holds the title
+    else
+      opts, title = title, nil -- opts-style call new_page({root=...}): prompt
+    end
+  end
+  opts = opts or {}
+  if type(title) == 'string' and title:match('^%s*$') then
+    title = nil -- blank behaves like no title: prompt instead of asserting
+  end
+  local root = resolve_root(opts)
+  if not root then
+    return
+  end
+  local page = require('logseq.page')
+  if title ~= nil then
+    page.open_lazy(page.title_to_path(root, title))
+    return
+  end
+  vim.ui.input({ prompt = 'Logseq new page: ' }, function(input)
+    if input == nil or input:match('^%s*$') then
+      vim.notify('logseq.nvim: new page cancelled', vim.log.levels.INFO)
+      return
+    end
+    page.open_lazy(page.title_to_path(root, input))
+  end)
 end
 
 return M
