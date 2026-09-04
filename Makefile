@@ -5,4 +5,6 @@ test:
 lint:
 	stylua --check .
 
-.PHONY: test lint
+ci: test lint
+
+.PHONY: test lint ci
