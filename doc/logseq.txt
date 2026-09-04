@@ -142,6 +142,10 @@ empty pages instead of keeping 0-byte files.
 
 Page titles map to filenames verbatim (spaces and case preserved):
 `Machine Learning` <-> `pages/Machine Learning.md`.
-Namespace (`/`) remapping is deferred (see PLAN.md M4).
+No `___`/legacy translation is applied: the reference graph sets no
+`:file-name-format` and contains no namespace pages, so inventing one
+would diverge from Logseq. Titles containing `/` are refused with a
+warning instead of opening a buffer that could never round-trip
+(namespaces are out of scope for v0.1, see |logseq-intro|).
 
  vim:tw=78:ts=8:ft=help:norl:

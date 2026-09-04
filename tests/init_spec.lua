@@ -77,6 +77,13 @@ describe('follow_link (M2)', function()
     assert.is_true(notified(vim.log.levels.WARN, 'no link under cursor'))
   end)
 
+  it('refuses [[a/b]] namespaces with a warning (M4, out of scope)', function()
+    local buf = scratch({ '- see [[parent/child]]' }, 10)
+    logseq.follow_link()
+    assert.are.equal(buf, vim.api.nvim_get_current_buf())
+    assert.is_true(notified(vim.log.levels.WARN, 'out of scope for v0.1'))
+  end)
+
   it('errors with no graph root', function()
     config._reset() -- drop the fixture graph_path; g: is already nil
     vim.fn.chdir('/tmp') -- outside any graph, like the M1 strict case
@@ -293,5 +300,18 @@ describe('new_page (M3)', function()
     logseq.new_page('Nope', {})
     assert.are.equal(buf, vim.api.nvim_get_current_buf())
     assert.is_true(H.notified(vim.log.levels.ERROR, 'graph root not found'))
+  end)
+
+  it('refuses a/b titles with a warning, explicit or prompted (M4)', function()
+    local root = H.tmpgraph()
+    local buf = H.home()
+    logseq.new_page('parent/child', { root = root })
+    assert.are.equal(buf, vim.api.nvim_get_current_buf())
+    assert.is_true(H.notified(vim.log.levels.WARN, 'out of scope for v0.1'))
+    vim.ui.input = function(_, on_confirm)
+      on_confirm('a/b')
+    end
+    logseq.new_page({ root = root })
+    assert.are.equal(buf, vim.api.nvim_get_current_buf())
   end)
 end)

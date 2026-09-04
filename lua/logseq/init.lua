@@ -26,6 +26,22 @@ local function resolve_root(opts)
   return root
 end
 
+--- Namespace guard (M4, see §2 non-goals + §8.1 finding): titles containing
+--- `/` map to subpaths that Logseq namespaces own. v0.1 refuses them with a
+--- warning instead of opening a buffer that could never round-trip.
+---@param title string
+---@return boolean true when the title is namespace-free
+local function check_no_namespace(title)
+  if title:find('/', 1, true) then
+    vim.notify(
+      ('logseq.nvim: namespace pages like [[%s]] are out of scope for v0.1'):format(title),
+      vim.log.levels.WARN
+    )
+    return false
+  end
+  return true
+end
+
 --- Find/open pages + journals via Telescope (vim.ui.select fallback).
 --- opts.root overrides root resolution (used by tests); otherwise
 --- graph.find_root() applies (config.graph_path, else upward search).
@@ -74,8 +90,9 @@ function M.follow_link(opts)
     vim.notify('logseq.nvim: no link under cursor', vim.log.levels.WARN)
     return
   end
-  -- NOTE: '/' namespaces (title_to_path passes them through, so the path
-  -- may point under a missing subdir) are deferred to M4.
+  if not check_no_namespace(link.text) then
+    return
+  end
   page.open_lazy(page.title_to_path(root, link.text))
 end
 
@@ -122,12 +139,18 @@ function M.new_page(title, opts)
   end
   local page = require('logseq.page')
   if title ~= nil then
+    if not check_no_namespace(title) then
+      return
+    end
     page.open_lazy(page.title_to_path(root, title))
     return
   end
   vim.ui.input({ prompt = 'Logseq new page: ' }, function(input)
     if input == nil or input:match('^%s*$') then
       vim.notify('logseq.nvim: new page cancelled', vim.log.levels.INFO)
+      return
+    end
+    if not check_no_namespace(input) then
       return
     end
     page.open_lazy(page.title_to_path(root, input))

@@ -1,7 +1,13 @@
 --- Page title <-> path mapping (M1) + lazy open (M2).
---- Escaping: spaces/case preserved verbatim per §8.1 discovery (no
---- `:file-name-format` set, no namespace files in the reference graph).
---- `/` handling deferred to M4.
+--- Escaping (finalized M4 per §8.1 finding): titles map VERBATIM
+--- (spaces/case preserved). The reference graph has no active
+--- `:file-name-format` (only a commented `:journal/file-name-format`),
+--- zero `___` files, zero subdirs, and zero `[[a/b]]` links — so there is
+--- no in-graph evidence for `___`/legacy translation, and inventing one
+--- would diverge from Logseq on this graph. `/` therefore passes through
+--- at this layer (`[[a/b]]` -> `pages/a/b.md`); the UX layer
+--- (`follow_link`, `new_page`) refuses such titles with a warning since
+--- namespace pages are out of scope for v0.1 (see §2 non-goals).
 local config = require('logseq.config')
 
 local M = {}
@@ -54,8 +60,15 @@ end
 --- Logseq deletes empty pages, so writing a 0-byte file would immediately
 --- diverge from the graph. Warn + abort the write; once the buffer has
 --- content (or the file exists) writes proceed normally.
+--- Single `augroup LogseqNvim`, created once (M4 idempotency): repeated
+--- open_lazy() calls must not churn or duplicate autocmds.
+local write_guard_ready = false
 local function ensure_write_guard()
-  local group = vim.api.nvim_create_augroup('LogseqNvimWrite', { clear = true })
+  if write_guard_ready then
+    return
+  end
+  write_guard_ready = true
+  local group = vim.api.nvim_create_augroup('LogseqNvim', { clear = true })
   vim.api.nvim_create_autocmd('BufWritePre', {
     group = group,
     callback = function(args)

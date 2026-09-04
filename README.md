@@ -72,7 +72,10 @@ Markdown buffers inside a graph get buffer-local treatment only
 ## Semantics
 
 - Titles map to filenames verbatim: `Machine Learning` ↔
-  `pages/Machine Learning.md`. Namespace (`/`) remapping is deferred.
+  `pages/Machine Learning.md`. No `___`/legacy translation is applied: the
+  reference graph sets no `:file-name-format` and contains no namespace
+  pages, so inventing one would diverge from Logseq. Titles containing `/`
+  are refused with a warning (namespaces are out of scope for v0.1).
 - Lazy opens never create files. `:w` on a still-empty dangling page is
   refused with a warning; the file appears only after content + `:w`.
 

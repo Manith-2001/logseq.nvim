@@ -28,6 +28,10 @@ describe('page.title_to_path (M1)', function()
     assert.are.equal(fixture .. '/pages/A.md', page.title_to_path(fixture, '  A  '))
   end)
 
+  it('passes / through verbatim at the mapping layer (M4: guard lives in the facade)', function()
+    assert.are.equal(fixture .. '/pages/a/b.md', page.title_to_path(fixture, 'a/b'))
+  end)
+
   it('errors on missing or blank titles', function()
     assert.has_error(function()
       page.title_to_path(fixture, '')
