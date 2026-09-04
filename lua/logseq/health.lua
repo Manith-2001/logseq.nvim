@@ -2,12 +2,26 @@ local M = {}
 
 local function report_graph(graph_path, pages_dir, journals_dir)
   if graph_path == nil or graph_path == '' then
-    vim.health.warn('graph_path unset: auto-detect lands in M1 (graph.find_root)')
-  elseif vim.fn.isdirectory(graph_path) == 0 then
-    vim.health.error(('graph_path not a directory: %s'):format(graph_path))
-    return
+    local ok, g = pcall(require, 'logseq.graph')
+    local root = ok and g.find_root() or nil
+    if root then
+      vim.health.ok(('graph auto-detected: %s'):format(root))
+      graph_path = root
+    else
+      vim.health.warn(
+        'graph_path unset and auto-detect found no graph'
+          .. ' (open a file inside the graph or set vim.g.logseq = { graph_path = ... })'
+      )
+      return
+    end
   else
-    vim.health.ok(('graph_path: %s'):format(graph_path))
+    graph_path = vim.fn.expand(graph_path)
+    if vim.fn.isdirectory(graph_path) == 0 then
+      vim.health.error(('graph_path not a directory: %s'):format(graph_path))
+      return
+    else
+      vim.health.ok(('graph_path: %s'):format(graph_path))
+    end
   end
   if graph_path and vim.fn.isdirectory(graph_path) == 1 then
     for _, sub in ipairs({ pages_dir, journals_dir }) do

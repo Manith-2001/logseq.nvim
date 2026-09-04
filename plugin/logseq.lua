@@ -10,7 +10,7 @@ local function cmd(name, fn, opts)
   end, opts or {})
 end
 
-cmd('LogseqFind', 'find_files', { desc = 'Logseq: find/open pages (M1)' })
+cmd('LogseqFind', 'find_files', { desc = 'Logseq: find/open pages' })
 cmd('LogseqFollow', 'follow_link', { desc = 'Logseq: follow [[link]] under cursor (M2)' })
 cmd('LogseqToday', 'today', { desc = 'Logseq: open today journal (M3)' })
 cmd('LogseqNew', 'new_page', { desc = 'Logseq: new page (M3)', nargs = '?' })
