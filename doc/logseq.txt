@@ -1,0 +1,147 @@
+*logseq.txt*  Logseq file-graph notes in Neovim
+
+Author: logseq.nvim
+Version: 0.1 (MVP)
+
+==============================================================================
+CONTENTS                                                *logseq-contents*
+
+  1. Intro ............................ |logseq-intro|
+  2. Requirements ..................... |logseq-requirements|
+  3. Setup ............................ |logseq-setup|
+  4. Usage ............................ |logseq-usage|
+  5. Commands ......................... |logseq-commands|
+  6. Mappings ......................... |logseq-mappings|
+  7. Configuration .................... |logseq-config|
+  8. Health ........................... |logseq-health|
+  9. Semantics ........................ |logseq-semantics|
+
+==============================================================================
+1. INTRO                                                *logseq-intro*
+
+logseq.nvim handles Logseq *file-graph* notes directly from Neovim:
+find/open pages, follow |[[links]]| under the cursor, open today's
+journal, and create new pages — all with Logseq's dangling-ref
+semantics (following a missing page opens an empty buffer; no file is
+created until you add content and write).
+
+Scope (v0.1): file graphs only (`pages/*.md`, `journals/*.md`).
+Logseq DB graphs (`*.sqlite`), block refs, queries, and tasks are
+out of scope. See README.md for the milestone plan.
+
+==============================================================================
+2. REQUIREMENTS                                  *logseq-requirements*
+
+- Neovim 0.12+ (uses |vim.pack|, |vim.fs.dir|, `vim.ui.input`)
+- Optional: telescope.nvim (a |vim.ui.select| fallback is used otherwise)
+- A Logseq file graph, e.g. `~/dev/notes_logseq/` with `pages/` +
+  `journals/` subdirectories (or `logseq/config.edn`)
+
+==============================================================================
+3. SETUP                                                *logseq-setup*
+
+With |vim.pack| (no plugin manager needed): >lua
+    vim.pack.add({ { src = 'https://github.com/Manith-2001/logseq.nvim' } })
+
+    -- Tell the plugin where your graph lives (or open a file inside
+    -- the graph and let it auto-detect):
+    vim.g.logseq = { graph_path = '~/dev/notes_logseq' }
+<
+No |logseq-setup| function call is required. `setup()` exists only to
+merge options from Lua: >lua
+    require('logseq').setup({ graph_path = '~/dev/notes_logseq' })
+<
+Precedence, low to high: defaults < `vim.g.logseq` < `setup(opts)`.
+
+After install, run `:helptags ALL` once so this help is indexed, then
+|:checkhealth| `logseq` to verify the graph resolves.
+
+==============================================================================
+4. USAGE                                                *logseq-usage*
+
+- `:LogseqFind` ......... pick a page or journal, open it.
+- `:LogseqFollow` ....... open the |[[link]]| under the cursor.
+- `:LogseqToday` ........ open today's journal page.
+- `:LogseqNew [title]` .. open a page; prompts when no title is given.
+
+Markdown buffers inside a graph get buffer-local treatment only
+(`b:logseq_root` is set, hard tabs are kept literal for Logseq-style
+block nesting). Nothing global is changed and no keys are mapped
+unless you map them (see |logseq-mappings|).
+
+==============================================================================
+5. COMMANDS                                          *logseq-commands*
+
+                                                            *:LogseqFind*
+:LogseqFind
+    List `pages/*.md` + `journals/*.md` via Telescope
+    (|vim.ui.select| fallback) and edit the choice.
+
+                                                          *:LogseqFollow*
+:LogseqFollow
+    Follow the `[[page]]`, `#[[page with spaces]]`, or `#tag` under
+    the cursor. Warns when there is no link; errors when no graph
+    root is found.
+
+                                                           *:LogseqToday*
+:LogseqToday
+    Open `journals/<date>.md` for today, where `<date>` follows
+    |logseq-config| `journal_format` (default `%Y_%m_%d`).
+
+                                                             *:LogseqNew*
+:LogseqNew [title]
+    Open `pages/<title>.md`. Prompts via |vim.ui.input| when no
+    title is given; cancelling aborts quietly.
+
+==============================================================================
+6. MAPPINGS                                          *logseq-mappings*
+
+Only `<Plug>(LogseqFollow)` is provided; no key is bound by default.
+Suggested opt-in bind (e.g. scoped to graph buffers, or global at
+your discretion): >lua
+    vim.keymap.set('n', 'gf', '<Plug>(LogseqFollow)')
+<
+
+==============================================================================
+7. CONFIGURATION                                      *logseq-config*
+
+All keys, with defaults: >lua
+    {
+      graph_path = nil,        -- absolute path (nil = auto-detect)
+      pages_dir = 'pages',
+      journals_dir = 'journals',
+      journal_format = '%Y_%m_%d', -- os.date format for journal stems
+      picker = 'telescope',    -- (vim.ui.select fallback is automatic)
+    }
+<
+Set via `vim.g.logseq` or `require('logseq').setup(opts)`.
+Unknown keys are not errors; they are reported by |:checkhealth|.
+
+Root resolution order: explicit `graph_path` (strict — a configured
+but missing path resolves to nothing rather than guessing), else an
+upward search from the current buffer (a directory containing
+`logseq/config.edn`, or `pages/` + `journals/` siblings), else the
+working directory.
+
+==============================================================================
+8. HEALTH                                              *logseq-health*
+
+:checkhealth logseq verifies: Neovim version, graph readability,
+`pages/` + `journals/` presence, Telescope availability (warn-only),
+and unknown config keys (warn-only).
+
+==============================================================================
+9. SEMANTICS                                        *logseq-semantics*
+
+Lazy (dangling-ref) opens: `:LogseqFollow`, `:LogseqToday`, and
+`:LogseqNew` never create files. A missing target opens as an empty
+buffer flagged internally; `:w` on a still-empty page is refused
+with a warning ("not writing empty page"), and the file appears only
+after you add content and write. This mirrors Logseq, which deletes
+empty pages instead of keeping 0-byte files.
+
+Page titles map to filenames verbatim (spaces and case preserved):
+`Machine Learning` <-> `pages/Machine Learning.md`.
+Namespace (`/`) remapping is deferred (see PLAN.md M4).
+
+ vim:tw=78:ts=8:ft=help:norl:
