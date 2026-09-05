@@ -18,6 +18,7 @@ CONTENTS                                                *logseq-contents*
    10. Multiple graphs ................. |logseq-multigraph|
    11. Graph explorer .................. |logseq-graphview|
    12. TODO lists ...................... |logseq-todos|
+   13. Smart action .................... |logseq-smartaction|
 
 ==============================================================================
 1. INTRO                                                *logseq-intro*
@@ -77,11 +78,16 @@ After install, run `:helptags ALL` once so this help is indexed, then
   buffer (see |logseq-todos|).
 - `:LogseqCycleTodo` ...... cycle the `- MARKER` on the cursor line to
   its next state (see |logseq-todos|).
+- `:LogseqSmartAction` .... follow the link, else cycle the task, else
+  move down (see |logseq-smartaction|).
+- `:LogseqNextLink` / `:LogseqPrevLink` jump to the next / previous
+  link (see |logseq-smartaction|).
 
 Markdown buffers inside a graph get buffer-local treatment only
 (`b:logseq_root` is set, hard tabs are kept literal for Logseq-style
-block nesting). Nothing global is changed and no keys are mapped
-unless you map them (see |logseq-mappings|).
+block nesting, `<CR>` / `[o` / `]o` run the smart action and link
+navigation). Nothing global is changed; pre-existing maps are never
+clobbered (see |logseq-mappings|).
 
 ==============================================================================
 5. COMMANDS                                          *logseq-commands*
@@ -148,16 +154,41 @@ unless you map them (see |logseq-mappings|).
     (warns otherwise); warns and leaves the line alone when it is
     not a cyclable task. Silent on success. See |logseq-todos|.
 
+                                                    *:LogseqSmartAction*
+:LogseqSmartAction
+    Follow the `[[link]]` / `#[[link]]` / `#tag` under the cursor,
+    else cycle the `- MARKER` task on the cursor line, else move the
+    cursor down one line (see |logseq-smartaction|).
+
+                                                       *:LogseqNextLink*
+:LogseqNextLink
+    Jump to the start of the next link after the cursor (see
+    |logseq-smartaction|).
+
+                                                       *:LogseqPrevLink*
+:LogseqPrevLink
+    Jump to the start of the previous link before the cursor (see
+    |logseq-smartaction|).
+
 ==============================================================================
 6. MAPPINGS                                          *logseq-mappings*
 
-Only `<Plug>(LogseqFollow)` and `<Plug>(LogseqCycleTodo)` are
-provided; no key is bound by default. Suggested opt-in binds (e.g.
+Only `<Plug>(LogseqFollow)`, `<Plug>(LogseqCycleTodo)`,
+`<Plug>(LogseqSmartAction)`, `<Plug>(LogseqNextLink)`, and
+`<Plug>(LogseqPrevLink)` are provided; no key is bound globally.
+Markdown buffers inside a graph additionally get buffer-local `<CR>`
+(smart action) and `[o` / `]o` (link navigation) from the ftplugin —
+each key guarded independently, so a map that already exists (yours
+or otherwise) is never clobbered. Suggested opt-in binds (e.g.
 scoped to graph buffers, or global at your discretion): >lua
     vim.keymap.set('n', 'gf', '<Plug>(LogseqFollow)')
     -- GUI/kitty only: most terminals send Ctrl+Enter as plain Enter.
     vim.keymap.set('n', '<C-CR>', '<Plug>(LogseqCycleTodo)')
 <
+To rebind a buffer-local key, remove it first
+(`:nunmap <buffer> <CR>`) and map the `<Plug>` targets yourself;
+pre-setting your own map also wins, since the ftplugin skips keys
+that are already mapped.
 
 ==============================================================================
 7. CONFIGURATION                                      *logseq-config*
@@ -324,5 +355,31 @@ byte-for-byte. Example custom chains (wholesale replacement): >lua
     vim.g.logseq = { todo_cycles = { { 'TODO', 'DONE' } } } -- skip DOING
 <
 Multi-line cycling and timestamps/LOGBOOK are out of scope for v1.
+
+==============================================================================
+13. SMART ACTION                                 *logseq-smartaction*
+
+`:LogseqSmartAction` (buffer-local `<CR>` in graph files) picks by
+line, link-first:
+
+1. A `[[link]]`, `#[[link]]`, or `#tag` under the cursor is followed
+   (so a link inside a `- TODO` line follows the link; tags open
+   their page directly, with no picker).
+2. Else a `- MARKER` task line is cycled per |logseq-todos|.
+3. Else the cursor moves down one line (a plain, mapping-immune
+   `<CR>` motion, silent at the last line).
+
+`:LogseqNextLink` / `:LogseqPrevLink` (buffer-local `]o` / `[o`)
+jump to the start of the next / previous link. The comparison is
+strict: a cursor sitting on a link moves on to the following one.
+At the ends (or with no links at all) they are silent no-ops —
+no wrap-around, no notifications.
+
+Unlike obsidian.nvim's smart action there is no heading/fold
+handling (`za`), no inlay-hint step, and no tag picker; headings
+fall through to the move-down branch. The Lua mirrors are
+`require('logseq').smart_action(opts)` (`{root=}` threads through
+to the follow step) and `.nav_link('next' | 'prev')` (asserts on
+any other direction).
 
    vim:tw=78:ts=8:ft=help:norl:

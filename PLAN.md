@@ -552,11 +552,14 @@ Chosen because `plenary.nvim` is already installed — zero new dependencies.
       `<CR>`/`[o`/`]o` (+ functional follow/nav proofs, no-clobber
       proof); non-graph markdown file gets none (explicit `:runtime`)
   - M9.4 — Docs + verify
-    - [ ] README + `doc/logseq.txt` smart-action section (order,
+    - [x] README + `doc/logseq.txt` smart-action section (order,
       fallback, bindings, override recipe, no-folding note)
-    - [ ] `make ci` green; `stylua --check` clean; manual on a scratch
+    - [x] `make ci` green; `stylua --check` clean; manual on a scratch
       graph only: `<CR>` on link / tag / task / prose lines, `[o`/`]o`
       across a page, pre-set buffer-local `<CR>` survives ftplugin
+      (2026-09-06: all pass; note the `--noplugin` harness does NOT
+      auto-fire `after/ftplugin` on `:edit` — specs and the manual
+      script use explicit `:runtime`, real startup is unaffected)
 - **Verify:** `make ci` green (existing + ~10 new specs); manual per
   M9.4 on a scratch file; real graphs untouched.
 - **Non-goals (v1):** tag picker, any fold setup or `za`, wrap-around

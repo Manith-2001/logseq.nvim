@@ -52,9 +52,17 @@ Then `:helptags ALL` (once, so `:help logseq` works) and `:checkhealth logseq`.
 | `:LogseqTodos`       | Pick a `- TODO` task via Telescope and jump to its line   |
 | `:LogseqTodosView`   | See all tasks grouped by file (`<CR>` jumps, `q` closes)  |
 | `:LogseqCycleTodo`   | Cycle the `- MARKER` on the cursor line to its next state |
+| `:LogseqSmartAction` | Follow link, else cycle task, else `<CR>` motion          |
+| `:LogseqNextLink`    | Jump to the next `[[link]]`/`#tag` after the cursor       |
+| `:LogseqPrevLink`    | Jump to the previous `[[link]]`/`#tag` before the cursor  |
 
-Only `<Plug>(LogseqFollow)` and `<Plug>(LogseqCycleTodo)` are provided —
-no keys are bound by default. Suggested opt-in binds:
+`<Plug>(LogseqFollow)`, `<Plug>(LogseqCycleTodo)`,
+`<Plug>(LogseqSmartAction)`, `<Plug>(LogseqNextLink)`, and
+`<Plug>(LogseqPrevLink)` are provided — nothing else is bound globally.
+Markdown buffers inside a graph additionally get buffer-local `<CR>`
+(smart action) and `[o` / `]o` (link navigation); existing maps are
+never clobbered (each key is guarded independently, remove with
+`:nunmap <buffer> <CR>`). Suggested opt-in binds:
 
 ```lua
 vim.keymap.set('n', 'gf', '<Plug>(LogseqFollow)')
@@ -65,7 +73,8 @@ vim.keymap.set('n', '<C-CR>', '<Plug>(LogseqCycleTodo)')
 Lua API mirrors the commands: `require('logseq').find_files()`,
 `.follow_link()`, `.today()`, `.new_page(title)`, `.switch_graph()`,
 `.graph_view(opts)` (`{title=, depth=1|2, root=}`), `.todos()`,
-`.todos_view()` (`{root=}`), `.cycle_todo()`.
+`.todos_view()` (`{root=}`), `.cycle_todo()`, `.smart_action(opts)`
+(`{root=}`), `.nav_link('next' | 'prev')`.
 
 ## Configuration
 
@@ -119,6 +128,19 @@ vim.g.logseq = { todo_cycles = { { 'TODO', 'DONE' } } } -- skip DOING
 Malformed chains (empty, non-string entries) are skipped at cycle time
 and reported by `:checkhealth logseq`, never hard errors.
 
+`:LogseqSmartAction` (buffer-local `<CR>` in graph files) picks by line:
+a `[[link]]` / `#[[link]]` / `#tag` under the cursor is followed
+(link-first, so a link inside a `- TODO` line follows the link and tags
+open their page directly), else a `- MARKER` task line is cycled, else
+the cursor moves down one line (plain `<CR>` motion, silent at the last
+line). `:LogseqNextLink` / `:LogseqPrevLink` (buffer-local `]o` / `[o`)
+jump to the start of the next/previous link on or after/before the
+cursor — strict, so a cursor sitting on a link moves on; silent no-ops
+at the ends with no wrap-around. Unlike obsidian.nvim there is no
+heading/fold handling (`za`) and no tag picker. To rebind, remove the
+buffer-local key first (`:nunmap <buffer> <CR>` — a pre-existing map is
+never clobbered by the ftplugin) and map the `<Plug>` targets yourself.
+
 Unknown keys are not errors; `:checkhealth logseq` reports them.
 
 ## Multiple graphs
@@ -148,7 +170,8 @@ step resolved the effective graph (`buffer:…` / `active:…` / `graph_path` /
 Switching never `:cd`s and never touches buffers outside the target graph.
 
 Markdown buffers inside a graph get buffer-local treatment only
-(`b:logseq_root`, hard tabs kept literal for Logseq-style block nesting).
+(`b:logseq_root`, hard tabs kept literal for Logseq-style block nesting,
+`<CR>` / `[o` / `]o` for the smart action and link navigation).
 
 ## Semantics
 
