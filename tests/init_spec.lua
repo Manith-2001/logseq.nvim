@@ -677,3 +677,101 @@ describe('todos_view scratch buffer (M7.3)', function()
     assert.is_true(H.notified(vim.log.levels.ERROR, 'graph root not found'))
   end)
 end)
+
+describe('cycle_todo buffer behavior (M8.4)', function()
+  local H
+  before_each(function()
+    H = m3_harness()
+    H.setup()
+  end)
+  after_each(function()
+    H.teardown()
+  end)
+
+  -- Scratch buffer on row with col; cycle_todo works in any buffer, so no
+  -- graph or config is needed (defaults come from config.get()).
+  local function scratch(lines, row, col)
+    local buf = vim.api.nvim_create_buf(true, false)
+    table.insert(H.bufs, buf)
+    vim.api.nvim_set_current_buf(buf)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    vim.bo[buf].modified = false
+    vim.api.nvim_win_set_cursor(0, { row, col })
+    return buf
+  end
+
+  local function line_of(buf, row)
+    return vim.api.nvim_buf_get_lines(buf, row - 1, row, false)[1]
+  end
+
+  it('cycles the cursor line through the default chain and wraps', function()
+    local buf = scratch({ '- TODO a', '- DOING b', '- DONE c' }, 1, 0)
+    logseq.cycle_todo()
+    assert.are.equal('- DOING a', line_of(buf, 1))
+    vim.api.nvim_win_set_cursor(0, { 2, 0 })
+    logseq.cycle_todo()
+    assert.are.equal('- DONE b', line_of(buf, 2))
+    vim.api.nvim_win_set_cursor(0, { 3, 0 })
+    logseq.cycle_todo()
+    assert.are.equal('- TODO c', line_of(buf, 3))
+    assert.are.same({}, H.notes) -- silent on success
+  end)
+
+  it('keeps indent, cursor row, and a valid cursor col', function()
+    local buf = scratch({ '  * DOING [#A] call [[Mom]]' }, 1, 0)
+    logseq.cycle_todo()
+    assert.are.equal('  * DONE [#A] call [[Mom]]', line_of(buf, 1))
+    local cur = vim.api.nvim_win_get_cursor(0)
+    assert.are.equal(1, cur[1])
+    assert.is_true(cur[2] <= #'  * DONE [#A] call [[Mom]]')
+  end)
+
+  it('restores the marker with a single undo', function()
+    -- Seed via :edit (not buf_set_lines) so the file load owns the prior
+    -- undo history, exactly like a user opening a page and cycling once.
+    local path = vim.fn.tempname() .. '.md'
+    vim.fn.writefile({ '- TODO a' }, path)
+    H.home()
+    vim.cmd('edit ' .. vim.fn.fnameescape(path))
+    local buf = vim.api.nvim_get_current_buf()
+    table.insert(H.bufs, buf)
+    vim.api.nvim_win_set_cursor(0, { 1, 0 })
+    logseq.cycle_todo()
+    assert.are.equal('- DOING a', line_of(buf, 1))
+    vim.cmd('undo')
+    assert.are.equal('- TODO a', line_of(buf, 1))
+    vim.fn.delete(path)
+  end)
+
+  it('warns and leaves the buffer untouched off-task', function()
+    local buf = scratch({ '- just a bullet', '- TODO kept' }, 1, 0)
+    logseq.cycle_todo()
+    assert.are.equal('- just a bullet', line_of(buf, 1))
+    assert.are.equal('- TODO kept', line_of(buf, 2))
+    assert.is_true(H.notified(vim.log.levels.WARN, 'no cyclable task'))
+  end)
+
+  it('warns when the marker sits in no configured chain', function()
+    vim.g.logseq = { todo_cycles = { { 'TODO', 'DONE' } } }
+    local buf = scratch({ '- WAIT x' }, 1, 0)
+    logseq.cycle_todo()
+    assert.are.equal('- WAIT x', line_of(buf, 1))
+    assert.is_true(H.notified(vim.log.levels.WARN, 'no cyclable task'))
+  end)
+
+  it('honors custom todo_cycles from vim.g.logseq', function()
+    vim.g.logseq = { todo_cycles = { { 'TODO', 'DONE' } } }
+    local buf = scratch({ '- TODO x' }, 1, 0)
+    logseq.cycle_todo()
+    assert.are.equal('- DONE x', line_of(buf, 1))
+    assert.are.same({}, H.notes)
+  end)
+
+  it('refuses non-modifiable buffers with a warning', function()
+    local buf = scratch({ '- TODO x' }, 1, 0)
+    vim.bo[buf].modifiable = false
+    logseq.cycle_todo()
+    assert.are.equal('- TODO x', line_of(buf, 1))
+    assert.is_true(H.notified(vim.log.levels.WARN, 'not modifiable'))
+  end)
+end)
