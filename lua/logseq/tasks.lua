@@ -5,6 +5,7 @@
 --- lists are not tasks. Priorities (`[#A]`) and SCHEDULED:/DEADLINE:
 --- lines stay plain text inside `text` (out of scope for v1).
 --- M7.1 core: parse_line() + scan().
+--- M8.2 core: cycle_status() + cycle_line() (pure, chains as params).
 local M = {}
 
 ---@class LogseqTask
@@ -54,6 +55,58 @@ function M.parse_line(line)
     return nil, nil
   end
   return marker, text
+end
+
+--- Cycle one marker through chains (M8): the first chain containing the
+--- status wins; a chain's last element wraps to its first, so DONE wraps
+--- to TODO and cycling never strips the marker. Malformed chains
+--- (non-table, empty, non-string entries) are skipped, never an error.
+---@param status string current marker, e.g. 'TODO'
+---@param chains table|nil list of marker chains
+---@return string|nil next marker, nil when status sits in no chain
+function M.cycle_status(status, chains)
+  if type(status) ~= 'string' or type(chains) ~= 'table' then
+    return nil
+  end
+  for _, chain in ipairs(chains) do
+    if type(chain) == 'table' and #chain > 0 then
+      for i, marker in ipairs(chain) do
+        if marker == status then
+          local nxt = chain[i % #chain + 1]
+          if type(nxt) == 'string' and nxt ~= '' then
+            return nxt
+          end
+          return nil
+        end
+      end
+    end
+  end
+  return nil
+end
+
+--- Cycle the marker on one line (M8): parse_line gates so only real task
+--- lines change; indent, bullet, and trailing text survive byte-for-byte
+--- (single gsub; function replacement dodges `%` in custom markers).
+--- Nil for non-task lines and unmapped markers.
+---@param line string
+---@param chains table|nil list of marker chains
+---@return string|nil newline
+function M.cycle_line(line, chains)
+  local status = M.parse_line(line)
+  if status == nil then
+    return nil
+  end
+  local nxt = M.cycle_status(status, chains)
+  if nxt == nil then
+    return nil
+  end
+  local newline, n = line:gsub('^(%s*[-*]%s+)%S+', function(pre)
+    return pre .. nxt
+  end, 1)
+  if n == 0 then
+    return nil
+  end
+  return newline
 end
 
 --- Scan root for tasks via graph.list_pages() + per-file readfile

@@ -93,6 +93,14 @@ function M.check()
   for _, k in ipairs(cfg_mod.unknown_keys()) do
     vim.health.warn('unknown config key: ' .. k)
   end
+  -- Malformed todo_cycles entries are skipped by the cycler (M8); surface
+  -- them here so a typo'd chain doesn't fail silently.
+  local problems = cfg_mod.check_cycles(cfg.todo_cycles)
+  if #problems > 0 then
+    vim.health.warn(
+      ('todo_cycles problem(s), bad entries skipped: %s'):format(table.concat(problems, '; '))
+    )
+  end
   report_graphs(cfg)
   if pcall(require, 'telescope') then
     vim.health.ok('telescope available')

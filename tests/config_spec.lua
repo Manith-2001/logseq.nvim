@@ -62,4 +62,30 @@ describe('config lazy vim.g.logseq merge (M1 bugfix)', function()
     config.setup({ graphs_dirs = { 'c' } })
     assert.are.same({ 'c' }, config.get().graphs_dirs)
   end)
+
+  it('defaults todo_cycles to the 7 documented chains (M8.1)', function()
+    assert.are.same({
+      { 'TODO', 'DOING', 'DONE' },
+      { 'LATER', 'NOW', 'DONE' },
+      { 'IN-PROGRESS', 'DONE' },
+      { 'WAIT', 'TODO' },
+      { 'WAITING', 'TODO' },
+      { 'CANCELLED', 'TODO' },
+      { 'CANCELED', 'TODO' },
+    }, config.get().todo_cycles)
+  end)
+
+  it('todo_cycles replaces wholesale across layers, no index merge (M8.1)', function()
+    vim.g.logseq = { todo_cycles = { { 'TODO', 'DOING', 'DONE' }, { 'LATER', 'NOW' } } }
+    config.setup({ todo_cycles = { { 'TODO', 'DONE' } } })
+    assert.are.same({ { 'TODO', 'DONE' } }, config.get().todo_cycles)
+  end)
+
+  it('check_cycles passes clean chains and flags malformed entries (M8.1)', function()
+    assert.are.same({}, config.check_cycles(config.get().todo_cycles))
+    assert.are.same({}, config.check_cycles({ { 'TODO', 'DONE' } }))
+    assert.are.equal(1, #config.check_cycles('nope'))
+    assert.are.equal(1, #config.check_cycles({ {} }))
+    assert.are.equal(1, #config.check_cycles({ { 'TODO', 42 } }))
+  end)
 end)

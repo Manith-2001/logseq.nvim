@@ -142,3 +142,94 @@ describe('tasks.scan (M7.1)', function()
     assert.are.same({}, tasks.scan(root))
   end)
 end)
+
+describe('tasks.cycle_status (M8.2)', function()
+  local chains
+  before_each(function()
+    chains = {
+      { 'TODO', 'DOING', 'DONE' },
+      { 'LATER', 'NOW', 'DONE' },
+      { 'IN-PROGRESS', 'DONE' },
+      { 'WAIT', 'TODO' },
+    }
+  end)
+
+  it('advances the primary chain and wraps DONE to TODO', function()
+    assert.are.equal('DOING', tasks.cycle_status('TODO', chains))
+    assert.are.equal('DONE', tasks.cycle_status('DOING', chains))
+    assert.are.equal('TODO', tasks.cycle_status('DONE', chains))
+  end)
+
+  it('first chain wins: DONE wraps via chain 1, LATER flows through', function()
+    assert.are.equal('NOW', tasks.cycle_status('LATER', chains))
+    assert.are.equal('DONE', tasks.cycle_status('NOW', chains))
+    assert.are.equal('TODO', tasks.cycle_status('DONE', chains))
+    assert.are.equal('DONE', tasks.cycle_status('IN-PROGRESS', chains))
+    assert.are.equal('TODO', tasks.cycle_status('WAIT', chains))
+  end)
+
+  it('honors custom chains, e.g. skipping DOING', function()
+    local custom = { { 'TODO', 'DONE' } }
+    assert.are.equal('DONE', tasks.cycle_status('TODO', custom))
+    assert.are.equal('TODO', tasks.cycle_status('DONE', custom))
+    assert.is_nil(tasks.cycle_status('DOING', custom))
+  end)
+
+  it('returns nil for unmapped markers and bad input, never an error', function()
+    assert.is_nil(tasks.cycle_status('TODO', { { 'LATER', 'NOW' } }))
+    assert.is_nil(tasks.cycle_status('FOO', chains))
+    assert.is_nil(tasks.cycle_status(nil, chains))
+    assert.is_nil(tasks.cycle_status('TODO', nil))
+    assert.is_nil(tasks.cycle_status('TODO', 'nope'))
+  end)
+
+  it('skips malformed chains silently', function()
+    assert.is_nil(tasks.cycle_status('TODO', { {} }))
+    assert.is_nil(tasks.cycle_status('TODO', { 'nope' }))
+    assert.is_nil(tasks.cycle_status('TODO', { { 'TODO', 42 } }))
+    assert.is_nil(tasks.cycle_status('TODO', { { 'TODO', '' } }))
+  end)
+end)
+
+describe('tasks.cycle_line (M8.2)', function()
+  local chains
+  before_each(function()
+    chains = {
+      { 'TODO', 'DOING', 'DONE' },
+      { 'LATER', 'NOW', 'DONE' },
+      { 'IN-PROGRESS', 'DONE' },
+      { 'WAIT', 'TODO' },
+    }
+  end)
+
+  it('cycles the marker and keeps the text', function()
+    assert.are.equal('- DOING Buy milk', tasks.cycle_line('- TODO Buy milk', chains))
+    assert.are.equal('- TODO paid', tasks.cycle_line('- DONE paid', chains))
+  end)
+
+  it('preserves indent, bullet, priorities, and links byte-for-byte', function()
+    assert.are.equal(
+      '\t\t* TODO [#A] call [[Mom]]',
+      tasks.cycle_line('\t\t* WAIT [#A] call [[Mom]]', chains)
+    )
+    assert.are.equal('- DONE x', tasks.cycle_line('- IN-PROGRESS x', chains))
+  end)
+
+  it('honors custom chains', function()
+    assert.are.equal('- DONE x', tasks.cycle_line('- TODO x', { { 'TODO', 'DONE' } }))
+  end)
+
+  it('returns nil for non-task lines and bad input', function()
+    assert.is_nil(tasks.cycle_line('- just a bullet', chains))
+    assert.is_nil(tasks.cycle_line('- todo lowercase', chains))
+    assert.is_nil(tasks.cycle_line('1. TODO numbered', chains))
+    assert.is_nil(tasks.cycle_line('- TODO   ', chains))
+    assert.is_nil(tasks.cycle_line('', chains))
+    assert.is_nil(tasks.cycle_line(nil, chains))
+    assert.is_nil(tasks.cycle_line(42, chains))
+  end)
+
+  it('returns nil when the marker sits in no chain', function()
+    assert.is_nil(tasks.cycle_line('- WAIT x', { { 'TODO', 'DONE' } }))
+  end)
+end)
