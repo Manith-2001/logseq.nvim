@@ -389,6 +389,38 @@ describe('resolution order end-to-end (M5.3)', function()
     logseq.find_files()
     assert.are.equal('Logseq Pages — ' .. vim.fn.fnamemodify(b, ':t'), prompt)
   end)
+
+  it('active beats buffer in find_files (search scope follows :LogseqGraphs)', function()
+    local a = H.tmpgraph()
+    local b = H.tmpgraph()
+    vim.fn.writefile({ '- x' }, a .. '/pages/A.md')
+    vim.fn.writefile({ '- x' }, b .. '/pages/A.md')
+    graph.set_active(b)
+    edit_in(a .. '/pages/A.md')
+    local prompt
+    H.tele.pick = function(_, opts)
+      prompt = opts.prompt_title
+    end
+    logseq.find_files()
+    assert.are.equal('Logseq Pages — ' .. vim.fn.fnamemodify(b, ':t'), prompt)
+  end)
+
+  it('active beats buffer in todos()/todos_view()/graph_view_all()', function()
+    local a = H.tmpgraph()
+    local b = H.tmpgraph()
+    vim.fn.writefile({ '- TODO from b' }, b .. '/pages/A.md')
+    graph.set_active(b)
+    edit_in(a .. '/pages/A.md')
+    local prompt
+    H.tele.pick = function(items, opts)
+      prompt = opts.prompt_title
+      opts.on_choice(items[1])
+    end
+    logseq.todos()
+    H.track_current()
+    assert.are.equal('Logseq Todos — ' .. vim.fn.fnamemodify(b, ':t'), prompt)
+    assert.are.equal(vim.fn.resolve(b) .. '/pages/A.md', vim.api.nvim_buf_get_name(0))
+  end)
 end)
 
 describe('switch_graph (M5.3)', function()
