@@ -478,3 +478,202 @@ describe('switch_graph (M5.3)', function()
     assert.is_nil(graph.get_active())
   end)
 end)
+
+describe('todos picker (M7.2)', function()
+  local H
+  before_each(function()
+    H = m3_harness()
+    H.setup()
+  end)
+  after_each(function()
+    H.teardown()
+  end)
+
+  it('titles the picker with the graph name and jumps to path:lnum on choice', function()
+    local root = H.tmpgraph()
+    vim.fn.writefile({ '- TODO Buy milk', '- plain', '\t- DONE paid' }, root .. '/pages/Errands.md')
+    vim.fn.writefile({ '- NOW standup notes' }, root .. '/journals/2026_09_05.md')
+    H.home()
+    local seen_items, seen_prompt, seen_format
+    H.tele.pick = function(items, opts)
+      seen_items, seen_prompt, seen_format = items, opts.prompt_title, opts.format_item
+      for _, task in ipairs(items) do
+        if task.status == 'DONE' then
+          opts.on_choice(task) -- line 3: proves the +lnum jump, not just the file
+          return
+        end
+      end
+      error('DONE task missing from picker')
+    end
+    logseq.todos({ root = root })
+    H.track_current()
+    assert.are.equal('Logseq Todos — ' .. vim.fn.fnamemodify(root, ':t'), seen_prompt)
+    assert.are.equal(3, #seen_items)
+    assert.are.equal('[TODO] Errands: Buy milk', seen_format(seen_items[2]))
+    assert.are.equal('[DONE] Errands: paid', seen_format(seen_items[3]))
+    assert.are.equal(vim.fn.resolve(root) .. '/pages/Errands.md', vim.api.nvim_buf_get_name(0))
+    assert.are.equal(3, vim.api.nvim_win_get_cursor(0)[1])
+  end)
+
+  it('empty graph warns without opening a picker', function()
+    local root = H.tmpgraph()
+    vim.fn.writefile({ '- just a bullet', '- todo lowercase' }, root .. '/pages/Plain.md')
+    H.home()
+    local opened = false
+    H.tele.pick = function()
+      opened = true
+    end
+    logseq.todos({ root = root })
+    assert.is_false(opened)
+    assert.is_true(H.notified(vim.log.levels.WARN, 'no tasks found'))
+  end)
+
+  it('errors with no graph root', function()
+    H.home()
+    vim.fn.chdir('/tmp') -- outside any graph; unnamed buf so cwd applies
+    local buf = vim.api.nvim_get_current_buf()
+    logseq.todos()
+    assert.are.equal(buf, vim.api.nvim_get_current_buf())
+    assert.is_true(H.notified(vim.log.levels.ERROR, 'graph root not found'))
+  end)
+end)
+
+describe('todos_view scratch buffer (M7.3)', function()
+  local H
+  before_each(function()
+    H = m3_harness()
+    H.setup()
+  end)
+  after_each(function()
+    H.teardown()
+  end)
+
+  local function seed(root)
+    vim.fn.writefile({ '- TODO Buy milk', '- plain', '\t- DONE paid' }, root .. '/pages/Errands.md')
+    vim.fn.writefile({ '- NOW standup notes' }, root .. '/journals/2026_09_05.md')
+  end
+
+  -- Invoke a buffer-local Lua keymap by its description (lhs encoding
+  -- varies; the desc is the stable handle).
+  local function key_cb(buf, desc)
+    for _, map in ipairs(vim.api.nvim_buf_get_keymap(buf, 'n')) do
+      if map.desc == desc then
+        assert.is_not_nil(map.callback, 'key has no Lua callback: ' .. desc)
+        return map.callback
+      end
+    end
+    error('missing key: ' .. desc)
+  end
+
+  local function todos_buffers()
+    local out = {}
+    for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+      if vim.api.nvim_buf_is_valid(buf) then
+        local ok, st = pcall(vim.api.nvim_buf_get_var, buf, 'logseq_todos')
+        if ok and type(st) == 'table' then
+          table.insert(out, buf)
+        end
+      end
+    end
+    return out
+  end
+
+  it('renders grouped sections with header, rows, and the b: lnum map', function()
+    local root = H.tmpgraph()
+    seed(root)
+    H.home()
+    local buf = logseq.todos_view({ root = root })
+    assert.is_not_nil(buf)
+    H.track_current()
+    assert.are.equal(buf, vim.api.nvim_get_current_buf())
+    assert.are.equal('logseq-todos', vim.bo[buf].filetype)
+    assert.are.equal('nofile', vim.bo[buf].buftype)
+    assert.is_false(vim.bo[buf].modifiable)
+    local head = '# Logseq Todos · ' .. vim.fn.fnamemodify(root, ':t') .. ' (3)'
+    assert.are.same({
+      head,
+      '',
+      '## 2026_09_05 (journal)',
+      '- [NOW] 1: standup notes',
+      '',
+      '## Errands (page)',
+      '- [TODO] 1: Buy milk',
+      '- [DONE] 3: paid',
+    }, vim.api.nvim_buf_get_lines(buf, 0, -1, false))
+    local st = vim.api.nvim_buf_get_var(buf, 'logseq_todos')
+    assert.are.equal(root, st.root)
+    assert.are.same({ path = root .. '/journals/2026_09_05.md', lnum = 1 }, st.map['4'])
+    assert.are.same({ path = root .. '/pages/Errands.md', lnum = 1 }, st.map['7'])
+    assert.are.same({ path = root .. '/pages/Errands.md', lnum = 3 }, st.map['8'])
+    assert.is_nil(st.map['1']) -- header line maps to nothing
+  end)
+
+  it('<CR> jumps to the task location; off-row warns and stays put', function()
+    local root = H.tmpgraph()
+    seed(root)
+    H.home()
+    local buf = logseq.todos_view({ root = root })
+    H.track_current()
+    local jump = key_cb(buf, 'Logseq: open task under cursor')
+    vim.api.nvim_win_set_cursor(0, { 1, 0 }) -- header line: no task here
+    jump()
+    assert.are.equal(buf, vim.api.nvim_get_current_buf())
+    assert.is_true(H.notified(vim.log.levels.WARN, 'no task under cursor'))
+    vim.api.nvim_win_set_cursor(0, { 7, 0 }) -- '- [TODO] 1: Buy milk'
+    jump()
+    H.track_current()
+    assert.are.equal(vim.fn.resolve(root) .. '/pages/Errands.md', vim.api.nvim_buf_get_name(0))
+    assert.are.equal(1, vim.api.nvim_win_get_cursor(0)[1])
+  end)
+
+  it('q closes the view', function()
+    local root = H.tmpgraph()
+    seed(root)
+    H.home()
+    local buf = logseq.todos_view({ root = root })
+    H.track_current()
+    key_cb(buf, 'Logseq: close todos view')()
+    assert.is_false(vim.api.nvim_buf_is_valid(buf))
+  end)
+
+  it('re-running reuses the single buffer and refreshes its content', function()
+    local root = H.tmpgraph()
+    seed(root)
+    H.home()
+    local buf = logseq.todos_view({ root = root })
+    H.track_current()
+    vim.fn.writefile({ '- LATER file more taxes' }, root .. '/pages/Extra.md')
+    local again = logseq.todos_view({ root = root })
+    assert.are.equal(buf, again)
+    assert.are.same({ buf }, todos_buffers())
+    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    assert.are.equal('# Logseq Todos · ' .. vim.fn.fnamemodify(root, ':t') .. ' (4)', lines[1])
+    local found_extra = false
+    for _, line in ipairs(lines) do
+      if line == '- [LATER] 1: file more taxes' then
+        found_extra = true
+      end
+    end
+    assert.is_true(found_extra)
+  end)
+
+  it('empty graph warns without opening a view', function()
+    local root = H.tmpgraph()
+    vim.fn.writefile({ '- just a bullet' }, root .. '/pages/Plain.md')
+    H.home()
+    local buf = vim.api.nvim_get_current_buf()
+    assert.is_nil(logseq.todos_view({ root = root }))
+    assert.are.equal(buf, vim.api.nvim_get_current_buf())
+    assert.are.same({}, todos_buffers())
+    assert.is_true(H.notified(vim.log.levels.WARN, 'no tasks found'))
+  end)
+
+  it('errors with no graph root', function()
+    H.home()
+    vim.fn.chdir('/tmp') -- outside any graph; unnamed buf so cwd applies
+    local buf = vim.api.nvim_get_current_buf()
+    assert.is_nil(logseq.todos_view())
+    assert.are.equal(buf, vim.api.nvim_get_current_buf())
+    assert.is_true(H.notified(vim.log.levels.ERROR, 'graph root not found'))
+  end)
+end)

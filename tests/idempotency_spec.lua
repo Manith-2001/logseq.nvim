@@ -43,6 +43,9 @@ describe('idempotency (M4)', function()
       'LogseqToday',
       'LogseqNew',
       'LogseqGraphs',
+      'LogseqGraph',
+      'LogseqTodos',
+      'LogseqTodosView',
     }) do
       assert.are.equal(2, vim.fn.exists(':' .. name))
     end

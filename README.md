@@ -6,7 +6,8 @@ with Logseq's dangling-ref semantics (a missing page opens as an empty buffer;
 no file is created until you add content and `:w`).
 
 Scope: file graphs (`pages/*.md`, `journals/*.md`) only. Logseq DB graphs
-(`*.sqlite`), block refs, queries, and task management are out of scope.
+(`*.sqlite`), block refs, queries, and toggling task states are out of
+scope (read-only TODO lists are built in, see below).
 
 Several file graphs are supported: point `graphs_dirs` at parent
 directories and switch between the discovered graphs with
@@ -47,6 +48,8 @@ Then `:helptags ALL` (once, so `:help logseq` works) and `:checkhealth logseq`.
 | `:LogseqNew [title]` | Open a page; prompts for the title when omitted           |
 | `:LogseqGraphs`      | Pick the active graph (multi-graph switching, see below)  |
 | `:LogseqGraph [title]` | Explore a page's links (Linked + Backlinks) in a scratch buffer |
+| `:LogseqTodos`       | Pick a `- TODO` task via Telescope and jump to its line   |
+| `:LogseqTodosView`   | See all tasks grouped by file (`<CR>` jumps, `q` closes)  |
 
 Only `<Plug>(LogseqFollow)` is provided — no keys are bound by default.
 Suggested opt-in bind:
@@ -57,7 +60,8 @@ vim.keymap.set('n', 'gf', '<Plug>(LogseqFollow)')
 
 Lua API mirrors the commands: `require('logseq').find_files()`,
 `.follow_link()`, `.today()`, `.new_page(title)`, `.switch_graph()`,
-`.graph_view(opts)` (`{title=, depth=1|2, root=}`).
+`.graph_view(opts)` (`{title=, depth=1|2, root=}`), `.todos()`,
+`.todos_view()` (`{root=}`).
 
 ## Configuration
 
@@ -80,6 +84,13 @@ The explorer centers on the given title, the current `pages/*` /
 `○` = dangling (opens lazily, nothing written until content + `:w`).
 Buffer keys: `<CR>` / `gf` open the entry, `q` closes, `r` refreshes,
 `1` / `2` set depth, `T` toggles dangling entries.
+
+`:LogseqTodos` lists every `- TODO` / `- DOING` / `NOW` / `LATER` / …
+block (uppercase markers only, `-`/`*` bullets) with `DONE` /
+`CANCELLED` last; choosing jumps to the task's line. `:LogseqTodosView`
+shows the same list grouped by file in a read-only scratch buffer
+(`<CR>` jumps, `q` closes, re-running reuses the buffer). Both are
+jump-only v1: marking tasks done comes later. No new config keys.
 
 Unknown keys are not errors; `:checkhealth logseq` reports them.
 

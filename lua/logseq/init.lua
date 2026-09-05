@@ -307,4 +307,187 @@ function M.graph_view(opts)
   return bufnr
 end
 
+--- Todos view helpers (M7.3). Layout groups scan output by file in
+--- first-seen order; rows keep scan order (open first, DONE-group last).
+---@param found LogseqTask[]
+---@param root string absolute graph root
+---@return string[] lines
+---@return table<integer, table> map buffer lnum -> {path=, lnum=} location
+local function todos_lines(found, root)
+  local lines = {
+    ('# Logseq Todos · %s (%d)'):format(vim.fn.fnamemodify(root, ':t'), #found),
+    '',
+  }
+  local map = {}
+  local order = {}
+  local groups = {}
+  for _, task in ipairs(found) do
+    local g = groups[task.path]
+    if g == nil then
+      g = { title = task.title, kind = task.kind, rows = {} }
+      groups[task.path] = g
+      table.insert(order, task.path)
+    end
+    table.insert(g.rows, task)
+  end
+  for gi, path in ipairs(order) do
+    local g = groups[path]
+    table.insert(lines, ('## %s (%s)'):format(g.title, g.kind))
+    for _, task in ipairs(g.rows) do
+      table.insert(lines, ('- [%s] %d: %s'):format(task.status, task.lnum, task.text))
+      -- String keys: b: vars round-trip through VimL, where dict keys are
+      -- strings (sparse integer keys would not convert).
+      map[tostring(#lines)] = { path = task.path, lnum = task.lnum }
+    end
+    if gi < #order then
+      table.insert(lines, '')
+    end
+  end
+  return lines, map
+end
+
+---@param buf integer
+---@return table|nil {root=, map=} or nil when not a todos-view buffer
+local function todos_state(buf)
+  local ok, st = pcall(vim.api.nvim_buf_get_var, buf, 'logseq_todos')
+  if not ok or type(st) ~= 'table' then
+    return nil
+  end
+  return st
+end
+
+---@return integer|nil existing todos-view bufnr (single buffer, reused)
+local function todos_find()
+  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.api.nvim_buf_is_valid(buf) and todos_state(buf) ~= nil then
+      return buf
+    end
+  end
+  return nil
+end
+
+--- Render scan output into buf and move the cursor to the first task row.
+---@param buf integer
+---@param root string absolute graph root
+---@param found LogseqTask[]
+local function todos_render(buf, root, found)
+  local lines, map = todos_lines(found, root)
+  vim.api.nvim_buf_set_var(buf, 'logseq_todos', { root = root, map = map })
+  vim.bo[buf].modifiable = true
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.bo[buf].modifiable = false
+  for i = 1, #lines do
+    if map[tostring(i)] ~= nil then
+      pcall(vim.api.nvim_win_set_cursor, 0, { i, 0 })
+      break
+    end
+  end
+end
+
+--- Open the task under the cursor via `:edit +lnum path` (jump-only v1).
+--- Stays put with a warning when the cursor is not on a task row.
+---@param buf integer|nil (default current buffer)
+---@param lnum integer|nil (default cursor line)
+local function todos_jump(buf, lnum)
+  buf = (buf == nil or buf == 0) and vim.api.nvim_get_current_buf() or buf
+  local st = todos_state(buf)
+  assert(st ~= nil, 'todos_jump: not a logseq-todos buffer')
+  lnum = lnum or vim.api.nvim_win_get_cursor(0)[1]
+  local loc = st.map[tostring(lnum)]
+  if loc == nil then
+    vim.notify('logseq.nvim: no task under cursor', vim.log.levels.WARN)
+    return
+  end
+  vim.cmd(('edit +%d %s'):format(loc.lnum, vim.fn.fnameescape(loc.path)))
+end
+
+--- Close the todos-view buffer.
+---@param buf integer|nil (default current buffer)
+local function todos_close(buf)
+  buf = (buf == nil or buf == 0) and vim.api.nvim_get_current_buf() or buf
+  pcall(vim.api.nvim_buf_delete, buf, { force = true })
+end
+
+---@param buf integer
+local function todos_keys(buf)
+  vim.keymap.set('n', '<CR>', function()
+    todos_jump(buf)
+  end, { buffer = buf, silent = true, desc = 'Logseq: open task under cursor' })
+  vim.keymap.set('n', 'q', function()
+    todos_close(buf)
+  end, { buffer = buf, silent = true, desc = 'Logseq: close todos view' })
+end
+
+--- List all `- <STATUS> text` tasks of the graph in a picker (M7.2,
+--- jump-only v1). Shares tasks.scan() with todos_view(). An empty graph
+--- warns instead of opening a picker. Rows show `[STATUS] title: text`
+--- under a `Logseq Todos — <graph>` title; choosing jumps to `path:lnum`
+--- via `:edit`. opts.root overrides root resolution (used by tests).
+---@param opts table|nil
+function M.todos(opts)
+  opts = opts or {}
+  local root = resolve_root(opts)
+  if not root then
+    return
+  end
+  local found = require('logseq.tasks').scan(root)
+  if #found == 0 then
+    vim.notify(('logseq.nvim: no tasks found under %s'):format(root), vim.log.levels.WARN)
+    return
+  end
+  require('logseq.telescope').pick(found, {
+    prompt_title = ('Logseq Todos — %s'):format(vim.fn.fnamemodify(root, ':t')),
+    format_item = function(task)
+      return ('[%s] %s: %s'):format(task.status, task.title, task.text)
+    end,
+    ordinal = function(task)
+      return ('%s %s %s'):format(task.status, task.title, task.text)
+    end,
+    on_choice = function(task)
+      vim.cmd(('edit +%d %s'):format(task.lnum, vim.fn.fnameescape(task.path)))
+    end,
+  })
+end
+
+--- Todos scratch view (M7.3, jump-only v1): all tasks grouped by file as
+--- `## title (kind)` sections with `- [STATUS] lnum: text` rows in a
+--- read-only `filetype=logseq-todos` buffer. Buffer state lives in
+--- `b:logseq_todos` ({root=, map=}: buffer lnum -> {path=, lnum=} file
+--- location). `<CR>` jumps to the task location, `q` closes; re-running
+--- reuses the single view buffer (no duplicates). Like todos(), an empty
+--- graph warns and opens nothing. opts.root overrides root resolution
+--- (used by tests).
+---@param opts table|nil
+---@return integer|nil view bufnr, or nil when aborted
+function M.todos_view(opts)
+  opts = opts or {}
+  local root = resolve_root(opts)
+  if not root then
+    return nil
+  end
+  local found = require('logseq.tasks').scan(root)
+  if #found == 0 then
+    vim.notify(('logseq.nvim: no tasks found under %s'):format(root), vim.log.levels.WARN)
+    return nil
+  end
+  local buf = todos_find()
+  local fresh = buf == nil
+  if fresh then
+    buf = vim.api.nvim_create_buf(true, false)
+  end
+  assert(buf ~= nil, 'todos_view: no buffer')
+  vim.api.nvim_set_current_buf(buf)
+  if fresh then
+    vim.bo[buf].buftype = 'nofile'
+    vim.bo[buf].bufhidden = 'wipe'
+    vim.bo[buf].swapfile = false
+    vim.bo[buf].filetype = 'logseq-todos'
+    todos_keys(buf)
+  end
+  pcall(vim.api.nvim_buf_set_name, buf, 'logseq-todos:' .. vim.fn.fnamemodify(root, ':t'))
+  todos_render(buf, root, found)
+  vim.bo[buf].modified = false
+  return buf
+end
+
 return M

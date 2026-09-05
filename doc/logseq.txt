@@ -15,8 +15,9 @@ CONTENTS                                                *logseq-contents*
   7. Configuration .................... |logseq-config|
   8. Health ........................... |logseq-health|
   9. Semantics ........................ |logseq-semantics|
-  10. Multiple graphs ................. |logseq-multigraph|
-  11. Graph explorer .................. |logseq-graphview|
+   10. Multiple graphs ................. |logseq-multigraph|
+   11. Graph explorer .................. |logseq-graphview|
+   12. TODO lists ...................... |logseq-todos|
 
 ==============================================================================
 1. INTRO                                                *logseq-intro*
@@ -28,8 +29,9 @@ semantics (following a missing page opens an empty buffer; no file is
 created until you add content and write).
 
 Scope (v0.1): file graphs only (`pages/*.md`, `journals/*.md`).
-Logseq DB graphs (`*.sqlite`), block refs, queries, and tasks are
-out of scope. See README.md for the milestone plan.
+Logseq DB graphs (`*.sqlite`), block refs, queries, and toggling task
+states are out of scope (read-only TODO lists are built in, see
+|logseq-todos|). See README.md for the milestone plan.
 
 ==============================================================================
 2. REQUIREMENTS                                  *logseq-requirements*
@@ -69,6 +71,9 @@ After install, run `:helptags ALL` once so this help is indexed, then
   |logseq-multigraph|).
 - `:LogseqGraph [title]`  explore a page's links (Linked + Backlinks)
   in a scratch buffer (see |logseq-graphview|).
+- `:LogseqTodos` .......... pick a `- TODO` task and jump to its line.
+- `:LogseqTodosView` ...... see all tasks grouped by file in a scratch
+  buffer (see |logseq-todos|).
 
 Markdown buffers inside a graph get buffer-local treatment only
 (`b:logseq_root` is set, hard tabs are kept literal for Logseq-style
@@ -113,10 +118,25 @@ unless you map them (see |logseq-mappings|).
     buffer, else a prompt. `●` = the target file exists, `○` =
     dangling (opens lazily, nothing is written until content +
     `:w`). Buffer-local keys: `<CR>` / `gf` open the entry under the
-    cursor, `q` closes, `r` refreshes, `1` / `2` set the depth, `T`
-    toggles dangling entries. The index builds synchronously and
-    refuses graphs over |logseq-config| `graph_max_files` with a
-    warning. See |logseq-graphview|.
+     cursor, `q` closes, `r` refreshes, `1` / `2` set the depth, `T`
+     toggles dangling entries. The index builds synchronously and
+     refuses graphs over |logseq-config| `graph_max_files` with a
+     warning. See |logseq-graphview|.
+
+                                                           *:LogseqTodos*
+:LogseqTodos
+    List every `- TODO` task of the graph via Telescope
+    (|vim.ui.select| fallback) and jump to the choice's line
+    (`:edit +lnum path`). The picker title shows the graph name;
+    an empty graph warns instead of opening a picker.
+    See |logseq-todos|.
+
+                                                       *:LogseqTodosView*
+:LogseqTodosView
+    Show the same task list grouped by file in a read-only
+    `filetype=logseq-todos` scratch buffer. Buffer-local keys:
+    `<CR>` jumps to the task under the cursor, `q` closes.
+    Re-running reuses the single view buffer. See |logseq-todos|.
 
 ==============================================================================
 6. MAPPINGS                                          *logseq-mappings*
@@ -230,6 +250,32 @@ over `pages/*.md` + `journals/*.md` and refuses graphs over
 instead of stalling. Namespace targets (`[[a/b]]`) are skipped by the
 index, matching the facade's out-of-scope refusal (see
 |logseq-semantics|); self-loops list under Linked but never as their
-own backlink.
+   own backlink.
 
-  vim:tw=78:ts=8:ft=help:norl:
+==============================================================================
+12. TODO LISTS                                     *logseq-todos*
+
+`:LogseqTodos` (picker) and `:LogseqTodosView` (scratch buffer) show
+every `- <STATUS> text` task of the current graph — like Logseq
+desktop's TODO query. Both share one scanner
+(`graph.list_pages()` + per-file `readfile`); both are jump-only v1
+(no status toggling) and read-only (nothing is ever written).
+
+Markers are uppercase-only: `TODO`, `NOW`, `LATER`, `DOING`,
+`IN-PROGRESS`, `WAIT`, `WAITING` sort first (file-then-line), then
+`DONE`, `CANCELLED`, `CANCELED` last. Lowercase `todo` is plain
+text, not a task. Bullets `-` and `*` are accepted; numbered lists
+(`1.`) are rejected. Priorities (`[#A]`) and `SCHEDULED:` /
+`DEADLINE:` stay plain text inside the task. Empty graphs warn
+(`no tasks found under <root>`) instead of opening anything.
+
+The picker shows `[STATUS] title: text` under a
+`Logseq Todos — <graph>` title and jumps to `path:lnum` on choice.
+The view groups the same tasks by file (`## title (kind)` sections
+with `- [STATUS] lnum: text` rows; the `lnum` → `{path}` map lives
+in `b:logseq_todos`). Buffer-local keys: `<CR>` jumps to the task
+under the cursor, `q` closes; re-running reuses the single view
+buffer. No new |logseq-config| keys; root resolution reuses the
+standard order (buffer → active → `graph_path` → cwd).
+
+   vim:tw=78:ts=8:ft=help:norl:
