@@ -15,8 +15,10 @@ CONTENTS                                                *logseq-contents*
   7. Configuration .................... |logseq-config|
   8. Health ........................... |logseq-health|
   9. Semantics ........................ |logseq-semantics|
-  10. Multiple graphs ................. |logseq-multigraph|
-  11. Graph explorer .................. |logseq-graphview|
+   10. Multiple graphs ................. |logseq-multigraph|
+   11. Graph explorer .................. |logseq-graphview|
+   12. TODO lists ...................... |logseq-todos|
+   13. Smart action .................... |logseq-smartaction|
 
 ==============================================================================
 1. INTRO                                                *logseq-intro*
@@ -28,8 +30,10 @@ semantics (following a missing page opens an empty buffer; no file is
 created until you add content and write).
 
 Scope (v0.1): file graphs only (`pages/*.md`, `journals/*.md`).
-Logseq DB graphs (`*.sqlite`), block refs, queries, and tasks are
-out of scope. See README.md for the milestone plan.
+Logseq DB graphs (`*.sqlite`), block refs, and queries are out of
+scope. TODO lists are read-only except single-line state cycling
+(|:LogseqCycleTodo|, one line at a time — no multi-line cycling, no
+timestamps/LOGBOOK). See README.md for the milestone plan.
 
 ==============================================================================
 2. REQUIREMENTS                                  *logseq-requirements*
@@ -69,13 +73,21 @@ After install, run `:helptags ALL` once so this help is indexed, then
   |logseq-multigraph|).
 - `:LogseqGraph [title]`  explore a page's links (Linked + Backlinks)
   in a scratch buffer (see |logseq-graphview|).
-- `:LogseqGraphAll` ..... overview of the whole graph with per-entry
-  link counts, plus a picker to any page's local view (same section).
+- `:LogseqTodos` .......... pick a `- TODO` task and jump to its line.
+- `:LogseqTodosView` ...... see all tasks grouped by file in a scratch
+  buffer (see |logseq-todos|).
+- `:LogseqCycleTodo` ...... cycle the `- MARKER` on the cursor line to
+  its next state (see |logseq-todos|).
+- `:LogseqSmartAction` .... follow the link, else cycle the task, else
+  move down (see |logseq-smartaction|).
+- `:LogseqNextLink` / `:LogseqPrevLink` jump to the next / previous
+  link (see |logseq-smartaction|).
 
 Markdown buffers inside a graph get buffer-local treatment only
 (`b:logseq_root` is set, hard tabs are kept literal for Logseq-style
-block nesting). Nothing global is changed and no keys are mapped
-unless you map them (see |logseq-mappings|).
+block nesting, `<CR>` / `[o` / `]o` run the smart action and link
+navigation). Nothing global is changed; pre-existing maps are never
+clobbered (see |logseq-mappings|).
 
 ==============================================================================
 5. COMMANDS                                          *logseq-commands*
@@ -115,10 +127,48 @@ unless you map them (see |logseq-mappings|).
     buffer, else a prompt. `●` = the target file exists, `○` =
     dangling (opens lazily, nothing is written until content +
     `:w`). Buffer-local keys: `<CR>` / `gf` open the entry under the
-    cursor, `q` closes, `r` refreshes, `1` / `2` set the depth, `T`
-    toggles dangling entries. The index builds synchronously and
-    refuses graphs over |logseq-config| `graph_max_files` with a
-    warning. See |logseq-graphview|.
+     cursor, `q` closes, `r` refreshes, `1` / `2` set the depth, `T`
+     toggles dangling entries. The index builds synchronously and
+     refuses graphs over |logseq-config| `graph_max_files` with a
+     warning. See |logseq-graphview|.
+
+                                                           *:LogseqTodos*
+:LogseqTodos
+    List every `- TODO` task of the graph via Telescope
+    (|vim.ui.select| fallback) and jump to the choice's line
+    (`:edit +lnum path`). The picker title shows the graph name;
+    an empty graph warns instead of opening a picker.
+    See |logseq-todos|.
+
+                                                        *:LogseqTodosView*
+:LogseqTodosView
+    Show the same task list grouped by file in a read-only
+    `filetype=logseq-todos` scratch buffer. Buffer-local keys:
+    `<CR>` jumps to the task under the cursor, `q` closes.
+    Re-running reuses the single view buffer. See |logseq-todos|.
+
+                                                       *:LogseqCycleTodo*
+:LogseqCycleTodo
+    Cycle the `- MARKER` on the cursor line to its next state per
+    |logseq-config| `todo_cycles`. Works in any modifiable buffer
+    (warns otherwise); warns and leaves the line alone when it is
+    not a cyclable task. Silent on success. See |logseq-todos|.
+
+                                                    *:LogseqSmartAction*
+:LogseqSmartAction
+    Follow the `[[link]]` / `#[[link]]` / `#tag` under the cursor,
+    else cycle the `- MARKER` task on the cursor line, else move the
+    cursor down one line (see |logseq-smartaction|).
+
+                                                       *:LogseqNextLink*
+:LogseqNextLink
+    Jump to the start of the next link after the cursor (see
+    |logseq-smartaction|).
+
+                                                       *:LogseqPrevLink*
+:LogseqPrevLink
+    Jump to the start of the previous link before the cursor (see
+    |logseq-smartaction|).
 
                                                          *:LogseqGraphAll*
 :LogseqGraphAll
@@ -134,11 +184,22 @@ unless you map them (see |logseq-mappings|).
 ==============================================================================
 6. MAPPINGS                                          *logseq-mappings*
 
-Only `<Plug>(LogseqFollow)` is provided; no key is bound by default.
-Suggested opt-in bind (e.g. scoped to graph buffers, or global at
-your discretion): >lua
+Only `<Plug>(LogseqFollow)`, `<Plug>(LogseqCycleTodo)`,
+`<Plug>(LogseqSmartAction)`, `<Plug>(LogseqNextLink)`, and
+`<Plug>(LogseqPrevLink)` are provided; no key is bound globally.
+Markdown buffers inside a graph additionally get buffer-local `<CR>`
+(smart action) and `[o` / `]o` (link navigation) from the ftplugin —
+each key guarded independently, so a map that already exists (yours
+or otherwise) is never clobbered. Suggested opt-in binds (e.g.
+scoped to graph buffers, or global at your discretion): >lua
     vim.keymap.set('n', 'gf', '<Plug>(LogseqFollow)')
+    -- GUI/kitty only: most terminals send Ctrl+Enter as plain Enter.
+    vim.keymap.set('n', '<C-CR>', '<Plug>(LogseqCycleTodo)')
 <
+To rebind a buffer-local key, remove it first
+(`:nunmap <buffer> <CR>`) and map the `<Plug>` targets yourself;
+pre-setting your own map also wins, since the ftplugin skips keys
+that are already mapped.
 
 ==============================================================================
 7. CONFIGURATION                                      *logseq-config*
@@ -154,10 +215,24 @@ All keys, with defaults: >lua
       graphs_depth = 2,        -- how deep to scan under each dir
       graph_depth = 1,         -- :LogseqGraph explorer depth (1 or 2)
       graph_max_files = 2000,  -- max files indexed synchronously
+      todo_cycles = {          -- :LogseqCycleTodo marker rotation
+        { 'TODO', 'DOING', 'DONE' },
+        { 'LATER', 'NOW', 'DONE' },
+        { 'IN-PROGRESS', 'DONE' },
+        { 'WAIT', 'TODO' },
+        { 'WAITING', 'TODO' },
+        { 'CANCELLED', 'TODO' },
+        { 'CANCELED', 'TODO' },
+      },
     }
 <
 Set via `vim.g.logseq` or `require('logseq').setup(opts)`.
 Unknown keys are not errors; they are reported by |:checkhealth|.
+`todo_cycles` replaces the defaults wholesale (no per-index merge),
+with the usual precedence: defaults < `vim.g.logseq` <
+`setup(opts)`. Malformed chains (empty, non-string entries) are
+skipped at cycle time and reported by |:checkhealth| (warn-only),
+never hard errors. See |logseq-todos| for the rotation rules.
 
 Root resolution order (see |logseq-multigraph|): explicit per-call
 `opts.root`, then the current buffer's graph (a buffer inside a graph
@@ -173,8 +248,8 @@ nothing rather than guessing), then the working directory.
 effective graph and the step that resolved it (`buffer:…` / `active:…` /
 `graph_path` / `auto:…`), a warning when the stored active-graph entry
 went stale, graph readability, `pages/` + `journals/` presence,
-Telescope availability (warn-only), and unknown config keys
-(warn-only).
+Telescope availability (warn-only), unknown config keys
+(warn-only), and malformed `todo_cycles` chains (warn-only).
 
 ==============================================================================
 9. SEMANTICS                                        *logseq-semantics*
@@ -243,12 +318,5 @@ over `pages/*.md` + `journals/*.md` and refuses graphs over
 instead of stalling. Namespace targets (`[[a/b]]`) are skipped by the
 index, matching the facade's out-of-scope refusal (see
 |logseq-semantics|); self-loops list under Linked but never as their
-own backlink.
+   own backlink.
 
-`:LogseqGraphAll` renders the same index globally: stats header plus
-`Pages` / `Journals` / `Dangling` sections (`:LogseqGraphAll`), with
-per-entry `→out ←back` counts so hubs, orphans (`→0 ←0`), and
-dangling refs stand out. `P` jumps from the overview to any page's
-local view through the standard picker.
-
-  vim:tw=78:ts=8:ft=help:norl:

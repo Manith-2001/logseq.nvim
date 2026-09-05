@@ -478,3 +478,441 @@ describe('switch_graph (M5.3)', function()
     assert.is_nil(graph.get_active())
   end)
 end)
+
+describe('todos picker (M7.2)', function()
+  local H
+  before_each(function()
+    H = m3_harness()
+    H.setup()
+  end)
+  after_each(function()
+    H.teardown()
+  end)
+
+  it('titles the picker with the graph name and jumps to path:lnum on choice', function()
+    local root = H.tmpgraph()
+    vim.fn.writefile({ '- TODO Buy milk', '- plain', '\t- DONE paid' }, root .. '/pages/Errands.md')
+    vim.fn.writefile({ '- NOW standup notes' }, root .. '/journals/2026_09_05.md')
+    H.home()
+    local seen_items, seen_prompt, seen_format
+    H.tele.pick = function(items, opts)
+      seen_items, seen_prompt, seen_format = items, opts.prompt_title, opts.format_item
+      for _, task in ipairs(items) do
+        if task.status == 'DONE' then
+          opts.on_choice(task) -- line 3: proves the +lnum jump, not just the file
+          return
+        end
+      end
+      error('DONE task missing from picker')
+    end
+    logseq.todos({ root = root })
+    H.track_current()
+    assert.are.equal('Logseq Todos — ' .. vim.fn.fnamemodify(root, ':t'), seen_prompt)
+    assert.are.equal(3, #seen_items)
+    assert.are.equal('[TODO] Errands: Buy milk', seen_format(seen_items[2]))
+    assert.are.equal('[DONE] Errands: paid', seen_format(seen_items[3]))
+    assert.are.equal(vim.fn.resolve(root) .. '/pages/Errands.md', vim.api.nvim_buf_get_name(0))
+    assert.are.equal(3, vim.api.nvim_win_get_cursor(0)[1])
+  end)
+
+  it('empty graph warns without opening a picker', function()
+    local root = H.tmpgraph()
+    vim.fn.writefile({ '- just a bullet', '- todo lowercase' }, root .. '/pages/Plain.md')
+    H.home()
+    local opened = false
+    H.tele.pick = function()
+      opened = true
+    end
+    logseq.todos({ root = root })
+    assert.is_false(opened)
+    assert.is_true(H.notified(vim.log.levels.WARN, 'no tasks found'))
+  end)
+
+  it('errors with no graph root', function()
+    H.home()
+    vim.fn.chdir('/tmp') -- outside any graph; unnamed buf so cwd applies
+    local buf = vim.api.nvim_get_current_buf()
+    logseq.todos()
+    assert.are.equal(buf, vim.api.nvim_get_current_buf())
+    assert.is_true(H.notified(vim.log.levels.ERROR, 'graph root not found'))
+  end)
+end)
+
+describe('todos_view scratch buffer (M7.3)', function()
+  local H
+  before_each(function()
+    H = m3_harness()
+    H.setup()
+  end)
+  after_each(function()
+    H.teardown()
+  end)
+
+  local function seed(root)
+    vim.fn.writefile({ '- TODO Buy milk', '- plain', '\t- DONE paid' }, root .. '/pages/Errands.md')
+    vim.fn.writefile({ '- NOW standup notes' }, root .. '/journals/2026_09_05.md')
+  end
+
+  -- Invoke a buffer-local Lua keymap by its description (lhs encoding
+  -- varies; the desc is the stable handle).
+  local function key_cb(buf, desc)
+    for _, map in ipairs(vim.api.nvim_buf_get_keymap(buf, 'n')) do
+      if map.desc == desc then
+        assert.is_not_nil(map.callback, 'key has no Lua callback: ' .. desc)
+        return map.callback
+      end
+    end
+    error('missing key: ' .. desc)
+  end
+
+  local function todos_buffers()
+    local out = {}
+    for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+      if vim.api.nvim_buf_is_valid(buf) then
+        local ok, st = pcall(vim.api.nvim_buf_get_var, buf, 'logseq_todos')
+        if ok and type(st) == 'table' then
+          table.insert(out, buf)
+        end
+      end
+    end
+    return out
+  end
+
+  it('renders grouped sections with header, rows, and the b: lnum map', function()
+    local root = H.tmpgraph()
+    seed(root)
+    H.home()
+    local buf = logseq.todos_view({ root = root })
+    assert.is_not_nil(buf)
+    H.track_current()
+    assert.are.equal(buf, vim.api.nvim_get_current_buf())
+    assert.are.equal('logseq-todos', vim.bo[buf].filetype)
+    assert.are.equal('nofile', vim.bo[buf].buftype)
+    assert.is_false(vim.bo[buf].modifiable)
+    local head = '# Logseq Todos · ' .. vim.fn.fnamemodify(root, ':t') .. ' (3)'
+    assert.are.same({
+      head,
+      '',
+      '## 2026_09_05 (journal)',
+      '- [NOW] 1: standup notes',
+      '',
+      '## Errands (page)',
+      '- [TODO] 1: Buy milk',
+      '- [DONE] 3: paid',
+    }, vim.api.nvim_buf_get_lines(buf, 0, -1, false))
+    local st = vim.api.nvim_buf_get_var(buf, 'logseq_todos')
+    assert.are.equal(root, st.root)
+    assert.are.same({ path = root .. '/journals/2026_09_05.md', lnum = 1 }, st.map['4'])
+    assert.are.same({ path = root .. '/pages/Errands.md', lnum = 1 }, st.map['7'])
+    assert.are.same({ path = root .. '/pages/Errands.md', lnum = 3 }, st.map['8'])
+    assert.is_nil(st.map['1']) -- header line maps to nothing
+  end)
+
+  it('<CR> jumps to the task location; off-row warns and stays put', function()
+    local root = H.tmpgraph()
+    seed(root)
+    H.home()
+    local buf = logseq.todos_view({ root = root })
+    H.track_current()
+    local jump = key_cb(buf, 'Logseq: open task under cursor')
+    vim.api.nvim_win_set_cursor(0, { 1, 0 }) -- header line: no task here
+    jump()
+    assert.are.equal(buf, vim.api.nvim_get_current_buf())
+    assert.is_true(H.notified(vim.log.levels.WARN, 'no task under cursor'))
+    vim.api.nvim_win_set_cursor(0, { 7, 0 }) -- '- [TODO] 1: Buy milk'
+    jump()
+    H.track_current()
+    assert.are.equal(vim.fn.resolve(root) .. '/pages/Errands.md', vim.api.nvim_buf_get_name(0))
+    assert.are.equal(1, vim.api.nvim_win_get_cursor(0)[1])
+  end)
+
+  it('q closes the view', function()
+    local root = H.tmpgraph()
+    seed(root)
+    H.home()
+    local buf = logseq.todos_view({ root = root })
+    H.track_current()
+    key_cb(buf, 'Logseq: close todos view')()
+    assert.is_false(vim.api.nvim_buf_is_valid(buf))
+  end)
+
+  it('re-running reuses the single buffer and refreshes its content', function()
+    local root = H.tmpgraph()
+    seed(root)
+    H.home()
+    local buf = logseq.todos_view({ root = root })
+    H.track_current()
+    vim.fn.writefile({ '- LATER file more taxes' }, root .. '/pages/Extra.md')
+    local again = logseq.todos_view({ root = root })
+    assert.are.equal(buf, again)
+    assert.are.same({ buf }, todos_buffers())
+    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    assert.are.equal('# Logseq Todos · ' .. vim.fn.fnamemodify(root, ':t') .. ' (4)', lines[1])
+    local found_extra = false
+    for _, line in ipairs(lines) do
+      if line == '- [LATER] 1: file more taxes' then
+        found_extra = true
+      end
+    end
+    assert.is_true(found_extra)
+  end)
+
+  it('empty graph warns without opening a view', function()
+    local root = H.tmpgraph()
+    vim.fn.writefile({ '- just a bullet' }, root .. '/pages/Plain.md')
+    H.home()
+    local buf = vim.api.nvim_get_current_buf()
+    assert.is_nil(logseq.todos_view({ root = root }))
+    assert.are.equal(buf, vim.api.nvim_get_current_buf())
+    assert.are.same({}, todos_buffers())
+    assert.is_true(H.notified(vim.log.levels.WARN, 'no tasks found'))
+  end)
+
+  it('errors with no graph root', function()
+    H.home()
+    vim.fn.chdir('/tmp') -- outside any graph; unnamed buf so cwd applies
+    local buf = vim.api.nvim_get_current_buf()
+    assert.is_nil(logseq.todos_view())
+    assert.are.equal(buf, vim.api.nvim_get_current_buf())
+    assert.is_true(H.notified(vim.log.levels.ERROR, 'graph root not found'))
+  end)
+end)
+
+describe('cycle_todo buffer behavior (M8.4)', function()
+  local H
+  before_each(function()
+    H = m3_harness()
+    H.setup()
+  end)
+  after_each(function()
+    H.teardown()
+  end)
+
+  -- Scratch buffer on row with col; cycle_todo works in any buffer, so no
+  -- graph or config is needed (defaults come from config.get()).
+  local function scratch(lines, row, col)
+    local buf = vim.api.nvim_create_buf(true, false)
+    table.insert(H.bufs, buf)
+    vim.api.nvim_set_current_buf(buf)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    vim.bo[buf].modified = false
+    vim.api.nvim_win_set_cursor(0, { row, col })
+    return buf
+  end
+
+  local function line_of(buf, row)
+    return vim.api.nvim_buf_get_lines(buf, row - 1, row, false)[1]
+  end
+
+  it('cycles the cursor line through the default chain and wraps', function()
+    local buf = scratch({ '- TODO a', '- DOING b', '- DONE c' }, 1, 0)
+    logseq.cycle_todo()
+    assert.are.equal('- DOING a', line_of(buf, 1))
+    vim.api.nvim_win_set_cursor(0, { 2, 0 })
+    logseq.cycle_todo()
+    assert.are.equal('- DONE b', line_of(buf, 2))
+    vim.api.nvim_win_set_cursor(0, { 3, 0 })
+    logseq.cycle_todo()
+    assert.are.equal('- TODO c', line_of(buf, 3))
+    assert.are.same({}, H.notes) -- silent on success
+  end)
+
+  it('keeps indent, cursor row, and a valid cursor col', function()
+    local buf = scratch({ '  * DOING [#A] call [[Mom]]' }, 1, 0)
+    logseq.cycle_todo()
+    assert.are.equal('  * DONE [#A] call [[Mom]]', line_of(buf, 1))
+    local cur = vim.api.nvim_win_get_cursor(0)
+    assert.are.equal(1, cur[1])
+    assert.is_true(cur[2] <= #'  * DONE [#A] call [[Mom]]')
+  end)
+
+  it('restores the marker with a single undo', function()
+    -- Seed via :edit (not buf_set_lines) so the file load owns the prior
+    -- undo history, exactly like a user opening a page and cycling once.
+    local path = vim.fn.tempname() .. '.md'
+    vim.fn.writefile({ '- TODO a' }, path)
+    H.home()
+    vim.cmd('edit ' .. vim.fn.fnameescape(path))
+    local buf = vim.api.nvim_get_current_buf()
+    table.insert(H.bufs, buf)
+    vim.api.nvim_win_set_cursor(0, { 1, 0 })
+    logseq.cycle_todo()
+    assert.are.equal('- DOING a', line_of(buf, 1))
+    vim.cmd('undo')
+    assert.are.equal('- TODO a', line_of(buf, 1))
+    vim.fn.delete(path)
+  end)
+
+  it('warns and leaves the buffer untouched off-task', function()
+    local buf = scratch({ '- just a bullet', '- TODO kept' }, 1, 0)
+    logseq.cycle_todo()
+    assert.are.equal('- just a bullet', line_of(buf, 1))
+    assert.are.equal('- TODO kept', line_of(buf, 2))
+    assert.is_true(H.notified(vim.log.levels.WARN, 'no cyclable task'))
+  end)
+
+  it('warns when the marker sits in no configured chain', function()
+    vim.g.logseq = { todo_cycles = { { 'TODO', 'DONE' } } }
+    local buf = scratch({ '- WAIT x' }, 1, 0)
+    logseq.cycle_todo()
+    assert.are.equal('- WAIT x', line_of(buf, 1))
+    assert.is_true(H.notified(vim.log.levels.WARN, 'no cyclable task'))
+  end)
+
+  it('honors custom todo_cycles from vim.g.logseq', function()
+    vim.g.logseq = { todo_cycles = { { 'TODO', 'DONE' } } }
+    local buf = scratch({ '- TODO x' }, 1, 0)
+    logseq.cycle_todo()
+    assert.are.equal('- DONE x', line_of(buf, 1))
+    assert.are.same({}, H.notes)
+  end)
+
+  it('refuses non-modifiable buffers with a warning', function()
+    local buf = scratch({ '- TODO x' }, 1, 0)
+    vim.bo[buf].modifiable = false
+    logseq.cycle_todo()
+    assert.are.equal('- TODO x', line_of(buf, 1))
+    assert.is_true(H.notified(vim.log.levels.WARN, 'not modifiable'))
+  end)
+end)
+
+describe('smart_action dispatch (M9.1)', function()
+  local H
+  before_each(function()
+    H = m3_harness()
+    H.setup()
+  end)
+  after_each(function()
+    H.teardown()
+  end)
+
+  -- Scratch buffer on row with 0-based col; opts.root override is threaded
+  -- through to follow_link so link specs stay hermetic (lazy open).
+  local function scratch(lines, row, col)
+    local buf = vim.api.nvim_create_buf(true, false)
+    table.insert(H.bufs, buf)
+    vim.api.nvim_set_current_buf(buf)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    vim.bo[buf].modified = false
+    vim.api.nvim_win_set_cursor(0, { row, col })
+    return buf
+  end
+
+  local function line_of(buf, row)
+    return vim.api.nvim_buf_get_lines(buf, row - 1, row, false)[1]
+  end
+
+  it('follows the link under the cursor', function()
+    local root = H.tmpgraph()
+    scratch({ '- see [[Target]]' }, 1, 8)
+    logseq.smart_action({ root = root })
+    H.track_current()
+    assert.are.equal(vim.fn.resolve(root) .. '/pages/Target.md', vim.api.nvim_buf_get_name(0))
+  end)
+
+  it('prefers the link over the task cycle on a task line', function()
+    local root = H.tmpgraph()
+    local buf = scratch({ '- TODO read [[Target]]' }, 1, 15)
+    logseq.smart_action({ root = root })
+    H.track_current()
+    assert.are.equal(vim.fn.resolve(root) .. '/pages/Target.md', vim.api.nvim_buf_get_name(0))
+    assert.are.equal('- TODO read [[Target]]', line_of(buf, 1))
+  end)
+
+  it('cycles a task line when no link is under the cursor', function()
+    local buf = scratch({ '- TODO x' }, 1, 0)
+    logseq.smart_action()
+    assert.are.equal('- DOING x', line_of(buf, 1))
+    assert.are.same({}, H.notes) -- silent on success
+  end)
+
+  it('falls back to the default <CR> motion on plain prose', function()
+    scratch({ 'first', '  second' }, 1, 0)
+    logseq.smart_action()
+    assert.are.same({ 2, 2 }, vim.api.nvim_win_get_cursor(0))
+    assert.are.same({}, H.notes) -- silent, no root needed
+  end)
+
+  it('fallback needs no graph root and stays silent at the last line', function()
+    vim.fn.chdir('/tmp') -- outside any graph; unnamed buf so cwd applies
+    local buf = scratch({ 'only' }, 1, 0)
+    logseq.smart_action()
+    assert.are.equal(buf, vim.api.nvim_get_current_buf())
+    assert.are.same({ 1, 0 }, vim.api.nvim_win_get_cursor(0))
+    assert.are.same({}, H.notes)
+  end)
+end)
+
+describe('nav_link next/prev (M9.1)', function()
+  local H
+  before_each(function()
+    H = m3_harness()
+    H.setup()
+  end)
+  after_each(function()
+    H.teardown()
+  end)
+
+  local function scratch(lines, row, col)
+    local buf = vim.api.nvim_create_buf(true, false)
+    table.insert(H.bufs, buf)
+    vim.api.nvim_set_current_buf(buf)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    vim.bo[buf].modified = false
+    vim.api.nvim_win_set_cursor(0, { row, col })
+    return buf
+  end
+
+  it('jumps to the next link across lines', function()
+    scratch({ 'see [[A]] here', 'and [[B]]' }, 1, 0)
+    logseq.nav_link('next')
+    assert.are.same({ 1, 4 }, vim.api.nvim_win_get_cursor(0))
+    logseq.nav_link('next')
+    assert.are.same({ 2, 4 }, vim.api.nvim_win_get_cursor(0))
+    assert.are.same({}, H.notes)
+  end)
+
+  it('skips the link under the cursor when moving next', function()
+    -- Cursor sits on the '[' of [[A]] (0-based col 4): next must move on.
+    scratch({ 'see [[A]] and [[B]]' }, 1, 4)
+    logseq.nav_link('next')
+    assert.are.same({ 1, 14 }, vim.api.nvim_win_get_cursor(0))
+  end)
+
+  it('moves to the previous link and stops silently at the start', function()
+    scratch({ 'see [[A]] here', 'and [[B]]' }, 2, 4)
+    logseq.nav_link('prev')
+    assert.are.same({ 1, 4 }, vim.api.nvim_win_get_cursor(0))
+    logseq.nav_link('prev')
+    assert.are.same({ 1, 4 }, vim.api.nvim_win_get_cursor(0)) -- no wrap
+    assert.are.same({}, H.notes)
+  end)
+
+  it('stops silently at the last link without wrapping', function()
+    scratch({ 'see [[A]]' }, 1, 4)
+    logseq.nav_link('next')
+    assert.are.same({ 1, 4 }, vim.api.nvim_win_get_cursor(0))
+    assert.are.same({}, H.notes)
+  end)
+
+  it('does nothing silently when the buffer has no links', function()
+    scratch({ 'plain prose', 'more prose' }, 1, 0)
+    logseq.nav_link('next')
+    logseq.nav_link('prev')
+    assert.are.same({ 1, 0 }, vim.api.nvim_win_get_cursor(0))
+    assert.are.same({}, H.notes)
+  end)
+
+  it('counts hashtags as stops', function()
+    scratch({ 'about #topic here' }, 1, 0)
+    logseq.nav_link('next')
+    assert.are.same({ 1, 6 }, vim.api.nvim_win_get_cursor(0))
+  end)
+
+  it('asserts on an invalid direction', function()
+    scratch({ 'see [[A]]' }, 1, 0)
+    assert.has_error(function()
+      logseq.nav_link('sideways')
+    end)
+  end)
+end)

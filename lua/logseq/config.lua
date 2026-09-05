@@ -8,6 +8,7 @@
 ---@field graphs_depth integer max levels below each scan dir (M5, default 2)
 ---@field graph_depth integer explorer depth for :LogseqGraph (M6.2, default 1)
 ---@field graph_max_files integer max files indexed synchronously (M6.2, default 2000)
+---@field todo_cycles string[][] marker chains for :LogseqCycleTodo, last wraps to first (M8)
 
 local M = {}
 
@@ -22,6 +23,16 @@ local defaults = {
   graphs_depth = 2,
   graph_depth = 1,
   graph_max_files = 2000,
+  -- M8: first chain containing a marker wins (DONE -> TODO via chain 1).
+  todo_cycles = {
+    { 'TODO', 'DOING', 'DONE' },
+    { 'LATER', 'NOW', 'DONE' },
+    { 'IN-PROGRESS', 'DONE' },
+    { 'WAIT', 'TODO' },
+    { 'WAITING', 'TODO' },
+    { 'CANCELLED', 'TODO' },
+    { 'CANCELED', 'TODO' },
+  },
 }
 
 --- Explicit opts from setup() calls (highest precedence layer).
@@ -45,6 +56,7 @@ local known_keys = {
   graphs_depth = true,
   graph_depth = true,
   graph_max_files = true,
+  todo_cycles = true,
 }
 
 local function warn_unknown(opts)
@@ -77,6 +89,7 @@ function M.setup(opts)
     graphs_depth = { current.graphs_depth, 'number' },
     graph_depth = { current.graph_depth, 'number' },
     graph_max_files = { current.graph_max_files, 'number' },
+    todo_cycles = { current.todo_cycles, 'table' },
   })
   return current
 end
@@ -100,7 +113,38 @@ function M.get()
   elseif type(g) == 'table' and g.graphs_dirs ~= nil then
     merged.graphs_dirs = vim.deepcopy(g.graphs_dirs)
   end
+  -- Nested lists merge index-wise at every level under tbl_deep_extend,
+  -- so user chains replace wholesale exactly like graphs_dirs above.
+  if explicit_opts.todo_cycles ~= nil then
+    merged.todo_cycles = vim.deepcopy(explicit_opts.todo_cycles)
+  elseif type(g) == 'table' and g.todo_cycles ~= nil then
+    merged.todo_cycles = vim.deepcopy(g.todo_cycles)
+  end
   return merged
+end
+
+--- Shape-check todo_cycles; returns problem strings ({} = ok). Malformed
+--- entries are skipped by the cycler, never a hard error — surface via
+--- health, like unknown keys.
+---@param chains any
+---@return string[]
+function M.check_cycles(chains)
+  if type(chains) ~= 'table' then
+    return { 'todo_cycles must be a list of chains' }
+  end
+  local problems = {}
+  for i, chain in ipairs(chains) do
+    if type(chain) ~= 'table' or #chain == 0 then
+      table.insert(problems, ('chain %d is empty'):format(i))
+    else
+      for j, marker in ipairs(chain) do
+        if type(marker) ~= 'string' or marker == '' then
+          table.insert(problems, ('chain %d entry %d is not a marker string'):format(i, j))
+        end
+      end
+    end
+  end
+  return problems
 end
 
 --- Unknown keys accumulated for health.lua to report (not a hard error).

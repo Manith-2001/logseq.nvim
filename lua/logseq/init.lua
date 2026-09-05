@@ -320,24 +320,290 @@ function M.graph_view(opts)
   return bufnr
 end
 
---- Open the global graph overview (M6.3): every page/journal/dangling
---- ref with per-entry link counts in a scratch `filetype=logseq-graph`
---- buffer. `<CR>`/`gf` jumps to the entry's page, `P` picks a page for
---- the local explorer, `T` toggles dangling, `r` refreshes, `q` closes.
---- Same root resolution and graph_max_files guard as graph_view.
---- opts.root overrides root resolution (used by tests).
----@param opts table|nil ({root=}; no command args: :LogseqGraphAll takes none)
----@return integer|nil explorer bufnr, or nil when aborted
-function M.graph_view_all(opts)
+--- Todos view helpers (M7.3). Layout groups scan output by file in
+--- first-seen order; rows keep scan order (open first, DONE-group last).
+---@param found LogseqTask[]
+---@param root string absolute graph root
+---@return string[] lines
+---@return table<integer, table> map buffer lnum -> {path=, lnum=} location
+local function todos_lines(found, root)
+  local lines = {
+    ('# Logseq Todos · %s (%d)'):format(vim.fn.fnamemodify(root, ':t'), #found),
+    '',
+  }
+  local map = {}
+  local order = {}
+  local groups = {}
+  for _, task in ipairs(found) do
+    local g = groups[task.path]
+    if g == nil then
+      g = { title = task.title, kind = task.kind, rows = {} }
+      groups[task.path] = g
+      table.insert(order, task.path)
+    end
+    table.insert(g.rows, task)
+  end
+  for gi, path in ipairs(order) do
+    local g = groups[path]
+    table.insert(lines, ('## %s (%s)'):format(g.title, g.kind))
+    for _, task in ipairs(g.rows) do
+      table.insert(lines, ('- [%s] %d: %s'):format(task.status, task.lnum, task.text))
+      -- String keys: b: vars round-trip through VimL, where dict keys are
+      -- strings (sparse integer keys would not convert).
+      map[tostring(#lines)] = { path = task.path, lnum = task.lnum }
+    end
+    if gi < #order then
+      table.insert(lines, '')
+    end
+  end
+  return lines, map
+end
+
+---@param buf integer
+---@return table|nil {root=, map=} or nil when not a todos-view buffer
+local function todos_state(buf)
+  local ok, st = pcall(vim.api.nvim_buf_get_var, buf, 'logseq_todos')
+  if not ok or type(st) ~= 'table' then
+    return nil
+  end
+  return st
+end
+
+---@return integer|nil existing todos-view bufnr (single buffer, reused)
+local function todos_find()
+  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.api.nvim_buf_is_valid(buf) and todos_state(buf) ~= nil then
+      return buf
+    end
+  end
+  return nil
+end
+
+--- Render scan output into buf and move the cursor to the first task row.
+---@param buf integer
+---@param root string absolute graph root
+---@param found LogseqTask[]
+local function todos_render(buf, root, found)
+  local lines, map = todos_lines(found, root)
+  vim.api.nvim_buf_set_var(buf, 'logseq_todos', { root = root, map = map })
+  vim.bo[buf].modifiable = true
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.bo[buf].modifiable = false
+  for i = 1, #lines do
+    if map[tostring(i)] ~= nil then
+      pcall(vim.api.nvim_win_set_cursor, 0, { i, 0 })
+      break
+    end
+  end
+end
+
+--- Open the task under the cursor via `:edit +lnum path` (jump-only v1).
+--- Stays put with a warning when the cursor is not on a task row.
+---@param buf integer|nil (default current buffer)
+---@param lnum integer|nil (default cursor line)
+local function todos_jump(buf, lnum)
+  buf = (buf == nil or buf == 0) and vim.api.nvim_get_current_buf() or buf
+  local st = todos_state(buf)
+  assert(st ~= nil, 'todos_jump: not a logseq-todos buffer')
+  lnum = lnum or vim.api.nvim_win_get_cursor(0)[1]
+  local loc = st.map[tostring(lnum)]
+  if loc == nil then
+    vim.notify('logseq.nvim: no task under cursor', vim.log.levels.WARN)
+    return
+  end
+  vim.cmd(('edit +%d %s'):format(loc.lnum, vim.fn.fnameescape(loc.path)))
+end
+
+--- Close the todos-view buffer.
+---@param buf integer|nil (default current buffer)
+local function todos_close(buf)
+  buf = (buf == nil or buf == 0) and vim.api.nvim_get_current_buf() or buf
+  pcall(vim.api.nvim_buf_delete, buf, { force = true })
+end
+
+---@param buf integer
+local function todos_keys(buf)
+  vim.keymap.set('n', '<CR>', function()
+    todos_jump(buf)
+  end, { buffer = buf, silent = true, desc = 'Logseq: open task under cursor' })
+  vim.keymap.set('n', 'q', function()
+    todos_close(buf)
+  end, { buffer = buf, silent = true, desc = 'Logseq: close todos view' })
+end
+
+--- List all `- <STATUS> text` tasks of the graph in a picker (M7.2,
+--- jump-only v1). Shares tasks.scan() with todos_view(). An empty graph
+--- warns instead of opening a picker. Rows show `[STATUS] title: text`
+--- under a `Logseq Todos — <graph>` title; choosing jumps to `path:lnum`
+--- via `:edit`. opts.root overrides root resolution (used by tests).
+---@param opts table|nil
+function M.todos(opts)
+  opts = opts or {}
+  local root = resolve_root(opts)
+  if not root then
+    return
+  end
+  local found = require('logseq.tasks').scan(root)
+  if #found == 0 then
+    vim.notify(('logseq.nvim: no tasks found under %s'):format(root), vim.log.levels.WARN)
+    return
+  end
+  require('logseq.telescope').pick(found, {
+    prompt_title = ('Logseq Todos — %s'):format(vim.fn.fnamemodify(root, ':t')),
+    format_item = function(task)
+      return ('[%s] %s: %s'):format(task.status, task.title, task.text)
+    end,
+    ordinal = function(task)
+      return ('%s %s %s'):format(task.status, task.title, task.text)
+    end,
+    on_choice = function(task)
+      vim.cmd(('edit +%d %s'):format(task.lnum, vim.fn.fnameescape(task.path)))
+    end,
+  })
+end
+
+--- Todos scratch view (M7.3, jump-only v1): all tasks grouped by file as
+--- `## title (kind)` sections with `- [STATUS] lnum: text` rows in a
+--- read-only `filetype=logseq-todos` buffer. Buffer state lives in
+--- `b:logseq_todos` ({root=, map=}: buffer lnum -> {path=, lnum=} file
+--- location). `<CR>` jumps to the task location, `q` closes; re-running
+--- reuses the single view buffer (no duplicates). Like todos(), an empty
+--- graph warns and opens nothing. opts.root overrides root resolution
+--- (used by tests).
+---@param opts table|nil
+---@return integer|nil view bufnr, or nil when aborted
+function M.todos_view(opts)
   opts = opts or {}
   local root = resolve_root(opts)
   if not root then
     return nil
   end
-  if not guard_size(root) then
+  local found = require('logseq.tasks').scan(root)
+  if #found == 0 then
+    vim.notify(('logseq.nvim: no tasks found under %s'):format(root), vim.log.levels.WARN)
     return nil
   end
-  return require('logseq.view').open_all({ root = root })
+  local buf = todos_find()
+  local fresh = buf == nil
+  if fresh then
+    buf = vim.api.nvim_create_buf(true, false)
+  end
+  assert(buf ~= nil, 'todos_view: no buffer')
+  vim.api.nvim_set_current_buf(buf)
+  if fresh then
+    vim.bo[buf].buftype = 'nofile'
+    vim.bo[buf].bufhidden = 'wipe'
+    vim.bo[buf].swapfile = false
+    vim.bo[buf].filetype = 'logseq-todos'
+    todos_keys(buf)
+  end
+  pcall(vim.api.nvim_buf_set_name, buf, 'logseq-todos:' .. vim.fn.fnamemodify(root, ':t'))
+  todos_render(buf, root, found)
+  vim.bo[buf].modified = false
+  return buf
+end
+
+--- Cycle the TODO marker on the cursor line (M8.3): rotates the marker
+--- through config.todo_cycles and writes the line back with one
+--- nvim_buf_set_lines (single undo step, cursor kept). Works in any
+--- modifiable buffer, not just graph files. Silent on success; WARNs when
+--- the buffer is not modifiable or the line is not a cyclable task.
+function M.cycle_todo()
+  local buf = vim.api.nvim_get_current_buf()
+  if not vim.bo[buf].modifiable then
+    vim.notify('logseq.nvim: buffer is not modifiable', vim.log.levels.WARN)
+    return
+  end
+  local cur = vim.api.nvim_win_get_cursor(0)
+  local row, col = cur[1], cur[2]
+  local lines = vim.api.nvim_buf_get_lines(buf, row - 1, row, false)
+  local newline =
+    require('logseq.tasks').cycle_line(lines[1], require('logseq.config').get().todo_cycles)
+  if newline == nil then
+    vim.notify('logseq.nvim: no cyclable task on current line', vim.log.levels.WARN)
+    return
+  end
+  vim.api.nvim_buf_set_lines(buf, row - 1, row, false, { newline })
+  pcall(vim.api.nvim_win_set_cursor, 0, { row, math.min(col, #newline) })
+end
+
+--- Collect every link in buffer buf as {lnum=, col=} stops (M9.1):
+--- 1-based line number plus the 1-based col_start of each
+--- parser.links_in_line() match, in buffer order.
+---@param buf integer
+---@return table[] {lnum: integer, col: integer}[]
+local function buffer_links(buf)
+  local parser = require('logseq.parser')
+  local out = {}
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  for lnum, line in ipairs(lines) do
+    for _, link in ipairs(parser.links_in_line(line)) do
+      table.insert(out, { lnum = lnum, col = link.col_start })
+    end
+  end
+  return out
+end
+
+--- Context-aware action for `<CR>` (M9.1, obsidian.nvim smart_action
+--- parity minus folding): link under cursor (any kind, even inside a
+--- task line) → follow_link(); else task line → cycle_todo(); else
+--- fall back to the default normal-mode `<CR>` motion (first non-blank
+--- of the next line) via `normal!`, which ignores mappings and so can
+--- never recurse into the caller's `<CR>` map. opts.root threads
+--- through to follow_link (used by tests).
+---@param opts table|nil ({root=} override)
+function M.smart_action(opts)
+  opts = opts or {}
+  local parser = require('logseq.parser')
+  local ok, line = pcall(vim.api.nvim_get_current_line)
+  if not ok then
+    return
+  end
+  -- nvim_win_get_cursor col is 0-based; the parser uses 1-based cols.
+  local col = vim.api.nvim_win_get_cursor(0)[2] + 1
+  if parser.link_under_cursor(line, col) then
+    M.follow_link(opts)
+    return
+  end
+  if require('logseq.tasks').parse_line(line) then
+    M.cycle_todo()
+    return
+  end
+  -- Plain prose: behave exactly like unmapped <CR>. `+` is the same
+  -- motion; silent! keeps the last line a quiet no-op.
+  pcall(vim.cmd, 'silent! normal! +')
+end
+
+--- Jump to the next/previous link in the current buffer (M9.1,
+--- obsidian.nvim nav_link parity): the first stop strictly after
+--- ('next') or before ('prev') the cursor wins, so a cursor sitting on
+--- a link moves on to the neighboring one. No wrap-around: a silent
+--- no-op at the ends and in link-free buffers.
+---@param direction string 'next' | 'prev'
+function M.nav_link(direction)
+  assert(direction == 'next' or direction == 'prev', 'nav_link: direction must be "next" or "prev"')
+  local matches = buffer_links(vim.api.nvim_get_current_buf())
+  if #matches == 0 then
+    return
+  end
+  local cur = vim.api.nvim_win_get_cursor(0)
+  local row, col = cur[1], cur[2] + 1 -- 1-based col, like the parser
+  if direction == 'next' then
+    for _, m in ipairs(matches) do
+      if m.lnum > row or (m.lnum == row and col < m.col) then
+        pcall(vim.api.nvim_win_set_cursor, 0, { m.lnum, m.col - 1 })
+        return
+      end
+    end
+    return
+  end
+  for i = #matches, 1, -1 do
+    local m = matches[i]
+    if m.lnum < row or (m.lnum == row and col > m.col) then
+      pcall(vim.api.nvim_win_set_cursor, 0, { m.lnum, m.col - 1 })
+      return
+    end
+  end
 end
 
 return M
