@@ -1,5 +1,5 @@
 --- Public facade. M1: find_files(); M2: follow_link(); M3: today()/new_page();
---- M5.3: switch_graph(); M6.2: graph_view().
+--- M5.3: switch_graph(); M6.2: graph_view(); M6.3: graph_view_all().
 local config = require('logseq.config')
 
 local M = {}
@@ -244,6 +244,27 @@ function M.switch_graph()
   })
 end
 
+--- Size guard shared by the explorers (M6.2/M6.3): the index builds
+--- synchronously, so graphs over graph_max_files abort with a warning
+--- (raise the key to opt in) instead of stalling the UI.
+---@param root string absolute graph root
+---@return boolean true when the graph is small enough to index
+local function guard_size(root)
+  local cfg = config.get()
+  local count = #require('logseq.graph').list_pages(root)
+  if count > cfg.graph_max_files then
+    vim.notify(
+      ('logseq.nvim: graph too large (%d files > %d graph_max_files); raise graph_max_files to explore it'):format(
+        count,
+        cfg.graph_max_files
+      ),
+      vim.log.levels.WARN
+    )
+    return false
+  end
+  return true
+end
+
 --- Open the local graph explorer (M6.2) for one page: Linked +
 --- Backlinks (+ `2 hops` at depth 2) in a scratch `filetype=logseq-graph`
 --- buffer. The center title comes from opts.title (or :LogseqGraph's
@@ -269,15 +290,7 @@ function M.graph_view(opts)
   end
   local cfg = config.get()
   local depth = (opts.depth == 2 or cfg.graph_depth == 2) and 2 or 1
-  local count = #require('logseq.graph').list_pages(root)
-  if count > cfg.graph_max_files then
-    vim.notify(
-      ('logseq.nvim: graph too large (%d files > %d graph_max_files); raise graph_max_files to explore it'):format(
-        count,
-        cfg.graph_max_files
-      ),
-      vim.log.levels.WARN
-    )
+  if not guard_size(root) then
     return nil
   end
   local title = opts.title

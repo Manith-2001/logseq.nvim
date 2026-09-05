@@ -63,6 +63,7 @@ Markdown buffers inside a graph additionally get buffer-local `<CR>`
 (smart action) and `[o` / `]o` (link navigation); existing maps are
 never clobbered (each key is guarded independently, remove with
 `:nunmap <buffer> <CR>`). Suggested opt-in binds:
+| `:LogseqGraphAll` | Overview of the whole graph (counts + picker to any page's local view) |
 
 ```lua
 vim.keymap.set('n', 'gf', '<Plug>(LogseqFollow)')

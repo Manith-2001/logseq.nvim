@@ -170,6 +170,17 @@ clobbered (see |logseq-mappings|).
     Jump to the start of the previous link before the cursor (see
     |logseq-smartaction|).
 
+                                                         *:LogseqGraphAll*
+:LogseqGraphAll
+    Overview of the whole graph in a scratch `filetype=logseq-graph`
+    buffer: a stats header (`N pages · M journals · …`) plus `Pages` /
+    `Journals` / `Dangling` sections with per-entry link counts
+    (`● A →1 ←1` = one out-link, one backlink; `○` dangling entries
+    show backlinks only). Same keys as |:LogseqGraph|, except depth
+    has no meaning here: `1` / `2` are replaced by `P`, which picks a
+    page (Telescope, |vim.ui.select| fallback) and opens its local
+    view. Same root resolution and `graph_max_files` guard.
+
 ==============================================================================
 6. MAPPINGS                                          *logseq-mappings*
 
@@ -309,77 +320,3 @@ index, matching the facade's out-of-scope refusal (see
 |logseq-semantics|); self-loops list under Linked but never as their
    own backlink.
 
-==============================================================================
-12. TODO LISTS                                     *logseq-todos*
-
-`:LogseqTodos` (picker) and `:LogseqTodosView` (scratch buffer) show
-every `- <STATUS> text` task of the current graph — like Logseq
-desktop's TODO query. Both share one scanner
-(`graph.list_pages()` + per-file `readfile`); both are jump-only v1
-(no status toggling) and read-only (nothing is ever written).
-
-Markers are uppercase-only: `TODO`, `NOW`, `LATER`, `DOING`,
-`IN-PROGRESS`, `WAIT`, `WAITING` sort first (file-then-line), then
-`DONE`, `CANCELLED`, `CANCELED` last. Lowercase `todo` is plain
-text, not a task. Bullets `-` and `*` are accepted; numbered lists
-(`1.`) are rejected. Priorities (`[#A]`) and `SCHEDULED:` /
-`DEADLINE:` stay plain text inside the task. Empty graphs warn
-(`no tasks found under <root>`) instead of opening anything.
-
-The picker shows `[STATUS] title: text` under a
-`Logseq Todos — <graph>` title and jumps to `path:lnum` on choice.
-The view groups the same tasks by file (`## title (kind)` sections
-with `- [STATUS] lnum: text` rows; the `lnum` → `{path}` map lives
-in `b:logseq_todos`). Buffer-local keys: `<CR>` jumps to the task
-under the cursor, `q` closes; re-running reuses the single view
-buffer. No new |logseq-config| keys; root resolution reuses the
-standard order (buffer → active → `graph_path` → cwd).
-
-CYCLING                                                       *logseq-cycle*
-
-|:LogseqCycleTodo| rotates the `- MARKER` on the cursor line through
-the |logseq-config| `todo_cycles` chains and writes it back in a
-single undo step (cursor kept, silent on success). It works in any
-modifiable buffer — not just graph files — and is the only
-state-changing TODO operation (the picker and view stay jump-only).
-
-Rotation rules: the marker advances to the next entry of the first
-chain containing it; the last entry wraps to the first (so `DONE`
-becomes `TODO` again — states are never stripped to bare text).
-First chain wins: with the defaults, `LATER → NOW → DONE` rejoins
-the main chain at `DONE`, and a further cycle yields `TODO`.
-A marker in no chain warns (`no cyclable task`) and leaves the line
-alone; non-task lines and non-modifiable buffers warn likewise.
-Indent, bullet (`-`/`*`), and the task text are preserved
-byte-for-byte. Example custom chains (wholesale replacement): >lua
-    vim.g.logseq = { todo_cycles = { { 'TODO', 'DONE' } } } -- skip DOING
-<
-Multi-line cycling and timestamps/LOGBOOK are out of scope for v1.
-
-==============================================================================
-13. SMART ACTION                                 *logseq-smartaction*
-
-`:LogseqSmartAction` (buffer-local `<CR>` in graph files) picks by
-line, link-first:
-
-1. A `[[link]]`, `#[[link]]`, or `#tag` under the cursor is followed
-   (so a link inside a `- TODO` line follows the link; tags open
-   their page directly, with no picker).
-2. Else a `- MARKER` task line is cycled per |logseq-todos|.
-3. Else the cursor moves down one line (a plain, mapping-immune
-   `<CR>` motion, silent at the last line).
-
-`:LogseqNextLink` / `:LogseqPrevLink` (buffer-local `]o` / `[o`)
-jump to the start of the next / previous link. The comparison is
-strict: a cursor sitting on a link moves on to the following one.
-At the ends (or with no links at all) they are silent no-ops —
-no wrap-around, no notifications.
-
-Unlike obsidian.nvim's smart action there is no heading/fold
-handling (`za`), no inlay-hint step, and no tag picker; headings
-fall through to the move-down branch. The Lua mirrors are
-`require('logseq').smart_action(opts)` (`{root=}` threads through
-to the follow step) and `.nav_link('next' | 'prev')` (asserts on
-any other direction).
-
-   vim:tw=78:ts=8:ft=help:norl:
