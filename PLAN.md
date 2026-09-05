@@ -649,13 +649,18 @@ Chosen because `plenary.nvim` is already installed — zero new dependencies.
       tests red by design (open `[[`, `[[ml`, `#[[ml`, `#ml`,
       cursor-after-`]]`, multiple `[[` per line, tab indents)
   - M10.1 — Pure core `complete.lua`
-    - [ ] `find_start(line, col) -> {startcol, prefix, kind}|nil`
+    - [x] `find_start(line, col) -> {startcol, prefix, kind}|nil`
       (`wikilink` | `hash-wikilink` | `hashtag`), nil-safe, 1-based
       cols like the parser
-    - [ ] `rank(prefix, titles)` + item shaping (`word`/`abbr`/
-      `menu` `● page`/`○ new`/`info`/`kind`)
-    - [ ] `complete(prefix, opts)` (`opts.items` injection for pure
-      tests; real path = `list_pages` + cached dangling)
+    - [x] `rank(prefix, titles)` + item shaping (`{word, menu}`
+      popup dicts over `{title, kind, path, exists}` core items;
+      no `abbr`/`info` — v1 popup carries title + `● page`/`○ new`
+      menu only)
+    - [x] `complete(prefix, opts)` (`opts.items` injection for pure
+      tests; real path = `list_pages` + dangling, fresh index per
+      call — per-root cache + invalidation lands in M10.2)
+    - [x] `omnifunc()` body + `menu()` pulled forward (thin wrappers
+      over the core; M10.2 keeps the ftplugin/auto/cache wiring)
   - M10.2 — Omnifunc + auto-popup (native UX, no frameworks)
     - [ ] `omnifunc(findstart, base)` 2-phase; `]]`-dedup on accept;
       root via `graph.find_root()` (buffer-anchored);
