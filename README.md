@@ -158,8 +158,14 @@ substring, then fuzzy, alphabetical within each tier; an empty `[[`
 offers everything (up to `completion_limit`). Manual completion always
 works with `<C-x><C-o>`; set `completion_auto = false` to keep only
 the manual trigger. The menu takes over `omnifunc` unless you set your
-own (only a stock `htmlcomplete` value is replaced). Recommended popup
-behavior:
+own (only a stock `htmlcomplete` value is replaced). The ftplugin also
+appends `noselect,noinsert` to buffer-local `completeopt` in graph
+buffers — without them Neovim writes the top match into your text the
+moment the menu opens, which made typing inside `[[ ]]` impossible;
+your other flags and the global value are untouched (countermand with
+your own `FileType` autocmd running
+`:setlocal completeopt-=noselect,completeopt-=noinsert` if you disagree).
+For non-graph buffers the recommended popup behavior is:
 
 ```lua
 vim.opt.completeopt = 'menuone,noselect,noinsert'

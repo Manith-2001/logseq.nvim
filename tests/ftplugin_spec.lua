@@ -165,6 +165,44 @@ describe('after/ftplugin/markdown.lua completion wiring (M10.2)', function()
     assert.are.equal(1, #watchers(buf))
   end)
 
+  it('keeps the popup advisory-only via buffer-local completeopt', function()
+    -- M10.5: stock completeopt pre-selects the first item AND writes it
+    -- into the buffer on open; with auto-popup that re-inserted the top
+    -- match on every keystroke and made typing impossible.
+    -- NOTE: vim.o reads the effective (local-overlaid) value for
+    -- global-local options, so the global is compared via scope='global'.
+    local global = function()
+      return vim.api.nvim_get_option_value('completeopt', { scope = 'global' })
+    end
+    local global_before = global()
+    edit(fixture .. '/pages/A.md')
+    vim.cmd('runtime after/ftplugin/markdown.lua')
+    local flags = vim.opt_local.completeopt:get()
+    assert.is_true(vim.tbl_contains(flags, 'noselect'))
+    assert.is_true(vim.tbl_contains(flags, 'noinsert'))
+    assert.is_true(vim.tbl_contains(flags, 'menu')) -- user flags preserved
+    assert.are.equal(global_before, global()) -- global untouched
+  end)
+
+  it('lets the user type ]] without the menu fighting back', function()
+    edit(fixture .. '/pages/A.md')
+    vim.cmd('runtime after/ftplugin/markdown.lua')
+    local fire = watchers(vim.api.nvim_get_current_buf())[1].callback
+    local orig_schedule = vim.schedule
+    local scheduled = 0
+    vim.schedule = function(_)
+      scheduled = scheduled + 1
+    end
+    vim.v.char = ']' -- closing bracket: never re-arm the menu
+    fire()
+    assert.are.equal(0, scheduled)
+    vim.v.char = 'm' -- ordinary typing still pops it
+    fire()
+    assert.are.equal(1, scheduled)
+    vim.v.char = ''
+    vim.schedule = orig_schedule
+  end)
+
   it('gates the watcher on completion_auto at fire time', function()
     edit(fixture .. '/pages/A.md')
     local buf = vim.api.nvim_get_current_buf()

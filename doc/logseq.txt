@@ -338,8 +338,12 @@ alphabetical within each tier; an empty `[[` offers everything (up to
 |logseq-config| `completion_limit`). Manual completion always works
 with `CTRL-X CTRL-O` (|i_CTRL-X_CTRL-O|); `completion_auto = false`
 keeps only the manual trigger. The menu takes over `omnifunc` unless
-you set your own (only a stock `htmlcomplete` value is replaced).
-Recommended popup behavior: >lua
+you set your own (only a stock `htmlcomplete` value is replaced). The
+ftplugin also appends `noselect,noinsert` to buffer-local `completeopt`
+in graph buffers — without them Neovim writes the top match into your
+text the moment the menu opens, which made typing inside `[[ ]]`
+impossible; other flags and the global value are untouched.
+Recommended popup behavior for non-graph buffers: >lua
     vim.opt.completeopt = 'menuone,noselect,noinsert'
 <
 Dangling titles are cached per graph and invalidated automatically on

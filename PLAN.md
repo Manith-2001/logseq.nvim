@@ -617,8 +617,12 @@ Chosen because `plenary.nvim` is already installed — zero new dependencies.
   }
   ```
   (Precedence defaults < `vim.g.logseq` < `setup(opts)`, like all
-  config; user's `completeopt` is left alone — README recommends
-  `menuone,noselect,noinsert`.)
+  config; the ftplugin appends `noselect,noinsert` to buffer-local
+  `completeopt` in graph buffers only (M10.5: stock `completeopt`
+  pre-selects AND inserts the top match on open, which made typing
+  inside `[[ ]]` impossible) — other flags and the global value are
+  untouched; README still recommends `menuone,noselect,noinsert` for
+  non-graph buffers.)
 - **Files:**
   - `lua/logseq/complete.lua` (`find_start()`, `rank()`,
     `complete()`, `omnifunc()`, per-root dangling cache + guards)
@@ -710,6 +714,18 @@ Chosen because `plenary.nvim` is already installed — zero new dependencies.
       timing (no insert mode) — 30-second live check left for a
       real session; blink covered by parity units per the locked
       cmp-only decision
+  - M10.5 — auto-popup insertion bugfix (reported: top match
+    `2026_08_27` written into the buffer on every keystroke, typing
+    inside `[[ ]]` impossible)
+    - [x] Root cause: stock `completeopt` (`menu,preview`) pre-selects
+      the first item AND inserts it on open; auto-popup re-fired per
+      char. Fix: ftplugin appends `noselect,noinsert` to
+      buffer-local `completeopt` (graph buffers only; global + other
+      flags untouched) — menu is advisory-only now
+    - [x] Watcher ignores `]` so closing/dismissing never pops the
+      menu back open
+    - [x] Regression specs (advisory-only flags, `]]` in peace);
+      README + `doc/logseq.txt` corrected (no longer "untouched")
 - **Verify:** `make ci` green (existing + ~25 new specs); manual per
   M10.4 on a scratch graph; real graphs untouched (reads only —
   accepting a completion writes text into the buffer, never a file).

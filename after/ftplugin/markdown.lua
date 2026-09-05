@@ -46,6 +46,15 @@ end, 'Logseq: jump to next link')
 -- watcher that pops the menu while typing in an open context.
 local complete_ok = pcall(require, 'logseq.complete')
 if complete_ok then
+  -- Popup safety (M10.5): Neovim's default completeopt pre-selects the
+  -- first menu item AND writes it into the buffer the moment the menu
+  -- opens. With the watcher firing on every keystroke that made typing
+  -- inside [[ ]] impossible: the top match was re-inserted on each char
+  -- and no input ever survived. Buffer-local noselect+noinsert keeps the
+  -- menu advisory-only (pick with <C-n>/<C-p>, confirm, or keep typing
+  -- to narrow); every other flag stays exactly as the user set it, and
+  -- the global value is untouched.
+  vim.opt_local.completeopt:append({ 'noselect', 'noinsert' })
   -- Never clobber a user omnifunc (LSP, blink, ...): take over only when
   -- unset or holding Neovim's stock markdown value. Stock
   -- $VIMRUNTIME/ftplugin/markdown.vim opens with `runtime!
@@ -65,6 +74,12 @@ if complete_ok then
       buffer = buf,
       desc = 'Logseq: auto-popup [[ ]] completion',
       callback = function()
+        -- A closing bracket ends the context (or a dismissal): popping
+        -- the menu back open on `]` fights the keystroke, so the user
+        -- can always type `]]` in peace.
+        if vim.v.char == ']' then
+          return
+        end
         -- completion_auto is read at fire time, so mid-session toggles
         -- apply without re-sourcing. Deferred past the inserted char so
         -- find_start() sees the fresh line; rapid keystrokes queue
