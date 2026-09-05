@@ -32,8 +32,9 @@ local function report_graphs(cfg)
     )
   end
   -- Effective root plus the resolution step that produced it (M5.3 order:
-  -- buffer walk-up, active override, graph_path, cwd walk-up). The root
-  -- comes from find_root() itself; the source is whichever step agrees.
+  -- buffer walk-up, active override, graph_path, cwd walk-up; search
+  -- pickers prefer active over buffer — see init.resolve_root(_, true)).
+  -- The root comes from find_root() itself; the source is whichever step agrees.
   local graph_path = nil
   if type(cfg.graph_path) == 'string' and cfg.graph_path ~= '' then
     graph_path = vim.fn.expand(cfg.graph_path)

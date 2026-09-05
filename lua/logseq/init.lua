@@ -14,10 +14,22 @@ end
 --- buffer walk-up → active graph → graph_path (strict) → cwd walk-up.
 --- Notifies + returns nil when no root is found.
 ---@param opts table
+---@param prefer_active boolean|nil when true, the active graph beats the
+--- current buffer (search pickers: Find/Todos/GraphAll). Contextual
+--- commands (follow/today/new/local graph view) keep buffer-first.
 ---@return string|nil
-local function resolve_root(opts)
+local function resolve_root(opts, prefer_active)
   local graph = require('logseq.graph')
-  local root = (type(opts.root) == 'string' and opts.root ~= '') and opts.root or graph.find_root()
+  if type(opts.root) == 'string' and opts.root ~= '' then
+    return opts.root
+  end
+  if prefer_active then
+    local active = graph.get_active()
+    if active then
+      return active
+    end
+  end
+  local root = graph.find_root()
   if not root then
     vim.notify(
       'logseq.nvim: graph root not found (set graph_path, pick :LogseqGraphs, or open a file inside the graph)',
@@ -46,12 +58,14 @@ end
 
 --- Find/open pages + journals via Telescope (vim.ui.select fallback).
 --- opts.root overrides root resolution (used by tests); otherwise
---- graph.find_root() applies (buffer → active → graph_path → cwd).
+--- the active graph beats the current buffer (search scope follows
+--- :LogseqGraphs, so a buffer in another graph doesn't hijack results),
+--- then buffer → graph_path → cwd.
 --- The picker title shows the graph name so the scope is visible.
 ---@param opts table|nil
 function M.find_files(opts)
   opts = opts or {}
-  local root = resolve_root(opts)
+  local root = resolve_root(opts, true)
   if not root then
     return
   end
@@ -435,11 +449,12 @@ end
 --- jump-only v1). Shares tasks.scan() with todos_view(). An empty graph
 --- warns instead of opening a picker. Rows show `[STATUS] title: text`
 --- under a `Logseq Todos — <graph>` title; choosing jumps to `path:lnum`
---- via `:edit`. opts.root overrides root resolution (used by tests).
+--- via `:edit`. opts.root overrides root resolution (used by tests);
+--- otherwise active beats buffer (like find_files).
 ---@param opts table|nil
 function M.todos(opts)
   opts = opts or {}
-  local root = resolve_root(opts)
+  local root = resolve_root(opts, true)
   if not root then
     return
   end
@@ -469,12 +484,12 @@ end
 --- location). `<CR>` jumps to the task location, `q` closes; re-running
 --- reuses the single view buffer (no duplicates). Like todos(), an empty
 --- graph warns and opens nothing. opts.root overrides root resolution
---- (used by tests).
+--- (used by tests); otherwise active beats buffer (like find_files).
 ---@param opts table|nil
 ---@return integer|nil view bufnr, or nil when aborted
 function M.todos_view(opts)
   opts = opts or {}
-  local root = resolve_root(opts)
+  local root = resolve_root(opts, true)
   if not root then
     return nil
   end
@@ -610,13 +625,14 @@ end
 --- ref with per-entry link counts in a scratch `filetype=logseq-graph`
 --- buffer. `<CR>`/`gf` jumps to the entry's page, `P` picks a page for
 --- the local explorer, `T` toggles dangling, `r` refreshes, `q` closes.
---- Same root resolution and graph_max_files guard as graph_view.
---- opts.root overrides root resolution (used by tests).
+--- Same graph_max_files guard as graph_view. opts.root overrides root
+--- resolution (used by tests); otherwise active beats buffer (like
+--- find_files).
 ---@param opts table|nil ({root=}; no command args: :LogseqGraphAll takes none)
 ---@return integer|nil explorer bufnr, or nil when aborted
 function M.graph_view_all(opts)
   opts = opts or {}
-  local root = resolve_root(opts)
+  local root = resolve_root(opts, true)
   if not root then
     return nil
   end

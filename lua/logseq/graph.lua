@@ -116,6 +116,10 @@ end
 --- 4. graph_path, strict as today: set-but-missing returns nil, skipping
 ---    the cwd fallback (no silent fallback).
 --- 5. cwd walk-up (only when graph_path is unset).
+--- NOTE: search pickers (find_files/todos/todos_view/graph_view_all)
+--- prefer the active graph over the buffer via init.resolve_root(_, true),
+--- so :LogseqGraphs sticks while searching. This function itself stays
+--- buffer-first for contextual commands (follow/today/new/local view).
 ---@param startpath string|nil file or dir to walk up from (default: buffer)
 ---@return string|nil absolute root path
 function M.find_root(startpath)
