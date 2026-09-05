@@ -565,6 +565,189 @@ Chosen because `plenary.nvim` is already installed — zero new dependencies.
 - **Non-goals (v1):** tag picker, any fold setup or `za`, wrap-around
   navigation, namespace filtering in `nav_link`, visual-mode support.
 
+### M10 — `[[ ]]` completion (omnifunc + cmp/blink, auto + manual)
+
+- **Scope:** Logseq-desktop-style page recommendations while typing
+  inside `[[..]]`: popup narrows to whatever is closest to what is
+  being typed. No true LSP server (separate stdio process +
+  `vim.lsp.start` client) — same popup UX via in-process completion,
+  ~10x less code, and the `prefix → ranked titles` core is identical
+  either way (a server could wrap it later). Follows repo conventions:
+  pure Lua, zero mandatory deps, `pcall(require)` optionals,
+  buffer-local graph-only behavior, dangling semantics preserved
+  (accepting a completion only inserts text — no file until content +
+  `:w`, M2 rule).
+- **Decisions (locked with user, 2026-09-05):**
+  - Engine: **omnifunc + cmp/blink** — one shared
+    `lua/logseq/complete.lua` core, buffer-local `omnifunc` for native
+    `<C-x><C-o>`, plus thin `lua/logseq/cmp.lua` (nvim-cmp) and
+    `lua/logseq/blink.lua` (blink.cmp) sources. Neither framework is
+    auto-registered; README snippets opt in (repo never steals global
+    setup). Verified manually against **nvim-cmp**.
+  - Trigger: **auto + manual** — `InsertCharPre` auto-popup in graph
+    buffers plus manual `<C-x><C-o>` fallback (works with
+    `completion_auto = false`).
+  - Pool: **pages + journals + dangling + `#[[ ]]`/`#tag`** — all
+    `graph.list_pages()` titles ranked together; dangling targets seen
+    by `index.build()` (no file yet) offered last as `○ new`;
+    `#[[..]]` completes the same title list with `#` intact,
+    `#tag` completes bare tags.
+  - Insertion: `[[` (empty prefix) offers all; accepting keeps an
+    already-typed `]]` after the cursor (no `]]]]` duplication); with
+    no `]]` ahead, inserts the title only (no auto-`]]` v1).
+  - Ranking v1: case-insensitive prefix > substring >
+    fuzzy-subsequence, alphabetical within tier, existing before
+    dangling. No recency sorting v1.
+  - `parser.links_in_line()` is NOT reused for detection — it only
+    matches *closed* `[[..]]`. `find_start()` is new logic for *open*
+    `[[foo` / `#[[foo` / `#foo` with no closing `]]` yet.
+  - Cache: `list_pages()` (cheap readdir) stays fresh per popup;
+    `index.build()` (reads every file) is cached per root and
+    invalidated on `BufWritePost *.md` under the graph +
+    `DirChanged`. Over `graph_max_files` → pages-only + one WARN
+    (no dangling scan), reusing the M6.2 guard.
+  - No new commands / `<Plug>` maps v1 (sources register from user
+    config, not `plugin/`); ftplugin sets buffer-local `omnifunc`
+    only when unset (never clobbers).
+- **Config:**
+  ```lua
+  vim.g.logseq = {
+    completion_auto = true, -- InsertCharPre auto-popup (manual <C-x><C-o> always on)
+    completion_limit = 50,  -- max popup items
+  }
+  ```
+  (Precedence defaults < `vim.g.logseq` < `setup(opts)`, like all
+  config; the ftplugin appends `noselect,noinsert` to buffer-local
+  `completeopt` in graph buffers only (M10.5: stock `completeopt`
+  pre-selects AND inserts the top match on open, which made typing
+  inside `[[ ]]` impossible) — other flags and the global value are
+  untouched; README still recommends `menuone,noselect,noinsert` for
+  non-graph buffers.)
+- **Files:**
+  - `lua/logseq/complete.lua` (`find_start()`, `rank()`,
+    `complete()`, `omnifunc()`, per-root dangling cache + guards)
+  - `lua/logseq/cmp.lua` (nvim-cmp source: trigger `[`/`#`,
+    `is_available` = in-graph + `find_start` hit)
+  - `lua/logseq/blink.lua` (blink.cmp parity source)
+  - `after/ftplugin/markdown.lua` (buffer-local `omnifunc` +
+    `InsertCharPre` auto-popup, no-clobber guards, graph files only)
+  - `lua/logseq/config.lua` (`completion_auto`,
+    `completion_limit` keys + validation)
+  - `lua/logseq/health.lua` (completion line: cache/dangling counts,
+    cmp/blink present-or-fallback note)
+  - `doc/logseq.txt`, `README.md` (trigger table, `]]` dedup rule,
+    `●`/`○` legend, cmp + blink setup snippets, "accept never
+    creates files" note)
+  - Tests: new `tests/complete_spec.lua`, extend `ftplugin_spec.lua`
+    (+ cmp/blink source specs with stubbed core, no real frameworks
+    in CI)
+- **Tasks:**
+  - M10.0 — Baseline + red skeletons
+    - [x] `make ci` green proof on `main`; branch `feat/complete`
+      (baseline was red: the todos-view merge had dropped the M6.3
+      `graph_view_all` facade + `:LogseqGraphAll` command that
+      `tests/graphall_spec.lua` and the docs require — restored both
+      byte-identical from that branch, suite green again before
+      branching)
+    - [x] `complete.lua` stubs + `tests/complete_spec.lua` contract
+      tests red by design (open `[[`, `[[ml`, `#[[ml`, `#ml`,
+      cursor-after-`]]`, multiple `[[` per line, tab indents)
+  - M10.1 — Pure core `complete.lua`
+    - [x] `find_start(line, col) -> {startcol, prefix, kind}|nil`
+      (`wikilink` | `hash-wikilink` | `hashtag`), nil-safe, 1-based
+      cols like the parser
+    - [x] `rank(prefix, titles)` + item shaping (`{word, menu}`
+      popup dicts over `{title, kind, path, exists}` core items;
+      no `abbr`/`info` — v1 popup carries title + `● page`/`○ new`
+      menu only)
+    - [x] `complete(prefix, opts)` (`opts.items` injection for pure
+      tests; real path = `list_pages` + dangling, fresh index per
+      call — per-root cache + invalidation lands in M10.2)
+    - [x] `omnifunc()` body + `menu()` pulled forward (thin wrappers
+      over the core; M10.2 keeps the ftplugin/auto/cache wiring)
+  - M10.2 — Omnifunc + auto-popup (native UX, no frameworks)
+    - [x] `omnifunc(findstart, base)` 2-phase (body landed in M10.1);
+      `]]`-dedup is structural — insertion replaces startcol..cursor
+      only and never emits brackets, so a trailing `]]` cannot double;
+      root via `graph.find_root()` (buffer-anchored);
+      `completion_limit` applied (config default 50 via `opts.limit`)
+    - [x] ftplugin: buffer-local `omnifunc` + `InsertCharPre`
+      auto-popup (open `[[`/`#[[`/`#` contexts, `pumvisible()` guard,
+      `vim.schedule` past the inserted char, `completion_auto`
+      gate read at fire time). Deviation from "only when unset":
+      stock markdown.vim chains html.vim, so every markdown buffer
+      arrives with `htmlcomplete#CompleteTags` — takeover also
+      applies there, never over a user-set value.
+    - [x] Dangling cache + `BufWritePost`/`DirChanged`
+      invalidation (wiring in `plugin/logseq.lua`, `invalidate()`
+      public) + `graph_max_files` pages-only fallback (one WARN
+      per root, like `guard_size`)
+    - [x] Config: `completion_auto = true`, `completion_limit = 50`
+      (defaults + known_keys + validation)
+  - M10.3 — nvim-cmp + blink sources (thin wrappers, same core)
+    - [x] `cmp.lua`: `new()` / `is_available()` / trigger
+      `{ '[', '#' }` / `complete()` → core → callback (never
+      auto-registered; only cmp touchpoint is the item-kind lookup
+      under `pcall(require, 'cmp')` with LSP-Text fallback)
+    - [x] `blink.lua`: parity (`get_completions`, same triggers +
+      availability gate, plain LSP item shapes, no blink API refs)
+    - [x] Shared `complete.complete_at_cursor()` so omnifunc, cmp,
+      and blink complete identically; `tests/cmp_spec.lua` +
+      `tests/blink_spec.lua` with stubbed callbacks, no frameworks
+      in CI
+  - M10.4 — Docs + health + verify
+    - [x] README `## Completion` + `doc/logseq.txt` §14
+      `*logseq-completion*` (config keys in both; health §8 and
+      mappings §6 cross-ref)
+    - [x] Health completion line (auto gate, limit, engines) +
+      `tests/health_spec.lua`
+    - [x] `make ci` green (16 files, 255 assertions);
+      `stylua --check` clean; scripted matrix on a scratch graph
+      only (never real graphs): `[[` pops all, `[[ml` narrows,
+      accept-sim keeps a single `]]`, `#tag` completes, dangling
+      shows `○ new`, `completion_auto=false` leaves manual
+      `<C-x><C-o>` working, health reports completion
+    - [x] nvim-cmp end-to-end against the real framework (register
+      → availability → triggers → wrapper complete → `mlflow`
+      entry; scripts in `/var/folders/.../T/m10_*`, not committed).
+      Not scriptable headless: visible popup + auto-popup keyfeed
+      timing (no insert mode) — 30-second live check left for a
+      real session; blink covered by parity units per the locked
+      cmp-only decision
+  - M10.5 — auto-popup insertion bugfix (reported: top match
+    `2026_08_27` written into the buffer on every keystroke, typing
+    inside `[[ ]]` impossible)
+    - [x] Root cause: stock `completeopt` (`menu,preview`) pre-selects
+      the first item AND inserts it on open; auto-popup re-fired per
+      char. Fix: ftplugin appends `noselect,noinsert` to
+      buffer-local `completeopt` (graph buffers only; global + other
+      flags untouched) — menu is advisory-only now
+    - [x] Watcher ignores `]` so closing/dismissing never pops the
+      menu back open
+    - [x] Regression specs (advisory-only flags, `]]` in peace);
+      README + `doc/logseq.txt` corrected (no longer "untouched")
+  - M10.6 — live narrowing (reported: lowercase `theme` highlighted
+    but never filtered; only capitalized `Theme` narrowed)
+    - [x] Root cause: the core ranked once at open; further typing
+      only ran the builtin popup's own (case-sensitive) filter.
+      Fix: buffer-local `CompleteChanged` watcher re-ranks through
+      the shared core per keystroke and swaps the menu in place via
+      `complete.refresh()` (case-insensitive prefix > substring >
+      fuzzy); `<C-e>` dismiss when the context closes or nothing
+      matches; loop-safe via an unchanged line+cursor guard
+    - [x] Deliberately NOT gated on `completion_auto` (manually
+      opened menus narrow too); no new cache — `list_pages()` is two
+      dir scans, cheap per keystroke
+    - [x] Specs (replace / dismiss / loop-guard / no-gate) + wiring
+      specs; README + `doc/logseq.txt` note the live narrowing
+- **Verify:** `make ci` green (existing + ~25 new specs); manual per
+  M10.4 on a scratch graph; real graphs untouched (reads only —
+  accepting a completion writes text into the buffer, never a file).
+- **Non-goals (v1):** true LSP server (`textDocument/completion`),
+  snippet expansion, `((block-ref))` completion, auto-`]]`
+  insertion, recency sorting, async IO, new-file creation on accept,
+  per-kind pool toggles, new commands/`<Plug>` maps.
+
 ## 8. Open questions / discovery tasks (do during M0–M1, not now)
 
 1. **Filename escaping:** confirm how `/` (namespaces), case, and special chars map to

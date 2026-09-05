@@ -62,7 +62,9 @@ Then `:helptags ALL` (once, so `:help logseq` works) and `:checkhealth logseq`.
 Markdown buffers inside a graph additionally get buffer-local `<CR>`
 (smart action) and `[o` / `]o` (link navigation); existing maps are
 never clobbered (each key is guarded independently, remove with
-`:nunmap <buffer> <CR>`). Suggested opt-in binds:
+`:nunmap <buffer> <CR>`). Graph buffers also get `[[ ]]` completion:
+an auto-popup while typing plus manual `<C-x><C-o>` (see Completion).
+Suggested opt-in binds:
 | `:LogseqGraphAll` | Overview of the whole graph (counts + picker to any page's local view) |
 
 ```lua
@@ -90,6 +92,8 @@ Lua API mirrors the commands: `require('logseq').find_files()`,
   graphs_depth = 2,            -- how deep to scan under each dir
   graph_depth = 1,             -- :LogseqGraph explorer depth (1 or 2 hops)
   graph_max_files = 2000,      -- max files indexed synchronously (else warns)
+  completion_auto = true,      -- auto-popup [[ ]] completion while typing
+  completion_limit = 50,       -- max popup items
   todo_cycles = {              -- :LogseqCycleTodo marker rotation
     { 'TODO', 'DOING', 'DONE' },
     { 'LATER', 'NOW', 'DONE' },
@@ -143,6 +147,51 @@ buffer-local key first (`:nunmap <buffer> <CR>` — a pre-existing map is
 never clobbered by the ftplugin) and map the `<Plug>` targets yourself.
 
 Unknown keys are not errors; `:checkhealth logseq` reports them.
+
+## Completion
+
+Inside a graph, typing `[[`, `#[[`, or `#tag` pops Logseq-desktop-like
+page completion: existing pages/journals first (`● page` /
+`● journal`), dangling refs after (`○ new` — accepting one only
+inserts the title; no file is created). Ranking is prefix, then
+substring, then fuzzy, alphabetical within each tier; an empty `[[`
+offers everything (up to `completion_limit`). The menu narrows live
+as you type — case-insensitive, so lowercase `theme` leaves only
+`Theme`-like titles — and dismisses itself when the brackets close or
+nothing matches. Manual completion always
+works with `<C-x><C-o>`; set `completion_auto = false` to keep only
+the manual trigger. The menu takes over `omnifunc` unless you set your
+own (only a stock `htmlcomplete` value is replaced). The ftplugin also
+appends `noselect,noinsert` to buffer-local `completeopt` in graph
+buffers — without them Neovim writes the top match into your text the
+moment the menu opens, which made typing inside `[[ ]]` impossible;
+your other flags and the global value are untouched (countermand with
+your own `FileType` autocmd running
+`:setlocal completeopt-=noselect,completeopt-=noinsert` if you disagree).
+For non-graph buffers the recommended popup behavior is:
+
+```lua
+vim.opt.completeopt = 'menuone,noselect,noinsert'
+```
+
+Dangling titles are cached per graph and invalidated automatically on
+any `*.md` write or directory change. Graphs over `graph_max_files`
+complete pages only, with one warning. Accepting a completion replaces
+the prefix only and never appends `]]`, so a trailing `]]` cannot
+double up; v1 never auto-inserts `]]`, expands snippets, or sorts by
+recency.
+
+nvim-cmp and blink.cmp are opt-in wrappers over the same core
+(`lua/logseq/cmp.lua`, `lua/logseq/blink.lua`) — never
+auto-registered; both auto-trigger on `[` and `#`:
+
+```lua
+-- nvim-cmp (after cmp loads):
+require('cmp').register_source('logseq', require('logseq.cmp').new())
+-- blink.cmp: expose the module as a custom source provider named
+-- `logseq` (see blink.cmp `sources.providers` docs):
+logseq = { module = 'logseq.blink' },
+```
 
 ## Multiple graphs
 

@@ -16,6 +16,7 @@ cmd('LogseqToday', 'today', { desc = 'Logseq: open today journal' })
 cmd('LogseqNew', 'new_page', { desc = 'Logseq: new page', nargs = '?' })
 cmd('LogseqGraphs', 'switch_graph', { desc = 'Logseq: switch active graph' })
 cmd('LogseqGraph', 'graph_view', { desc = 'Logseq: explore page links', nargs = '?' })
+cmd('LogseqGraphAll', 'graph_view_all', { desc = 'Logseq: overview of the whole graph' })
 cmd('LogseqTodos', 'todos', { desc = 'Logseq: list tasks (picker)' })
 cmd('LogseqTodosView', 'todos_view', { desc = 'Logseq: list tasks (scratch buffer)' })
 cmd('LogseqCycleTodo', 'cycle_todo', { desc = 'Logseq: cycle TODO state on current line' })
@@ -36,6 +37,26 @@ end
 
 navcmd('LogseqNextLink', 'next', 'Logseq: jump to next link')
 navcmd('LogseqPrevLink', 'prev', 'Logseq: jump to previous link')
+
+-- [[ ]] completion cache (M10.2): dangling titles are cached per root
+-- and rebuilt lazily, so any markdown write or directory change drops
+-- the cache. Idempotent via clear=true (safe to :source repeatedly).
+local complete_cache_grp = vim.api.nvim_create_augroup('LogseqCompleteCache', { clear = true })
+vim.api.nvim_create_autocmd('BufWritePost', {
+  group = complete_cache_grp,
+  pattern = '*.md',
+  desc = 'Logseq: invalidate [[ ]] completion cache',
+  callback = function()
+    require('logseq.complete').invalidate()
+  end,
+})
+vim.api.nvim_create_autocmd('DirChanged', {
+  group = complete_cache_grp,
+  desc = 'Logseq: invalidate [[ ]] completion cache',
+  callback = function()
+    require('logseq.complete').invalidate()
+  end,
+})
 
 -- <Plug> mapping only; never steal gf/<leader> unconditionally.
 -- Suggested user bind (README, M3): vim.keymap.set('n', 'gf', '<Plug>(LogseqFollow)')

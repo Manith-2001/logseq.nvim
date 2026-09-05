@@ -102,6 +102,23 @@ function M.check()
     )
   end
   report_graphs(cfg)
+  -- Completion (M10): one summary line — auto-popup gate, popup budget,
+  -- and which engines are present. Frameworks are optional; absence is
+  -- info, never a warning.
+  local engines = { 'omnifunc' }
+  if pcall(require, 'cmp') then
+    table.insert(engines, 'cmp')
+  end
+  if pcall(require, 'blink.cmp') then
+    table.insert(engines, 'blink')
+  end
+  vim.health.info(
+    ('completion: auto-popup %s, limit %s, engines: %s'):format(
+      cfg.completion_auto and 'on' or 'off',
+      tostring(tonumber(cfg.completion_limit) or cfg.completion_limit),
+      table.concat(engines, ', ')
+    )
+  )
   if pcall(require, 'telescope') then
     vim.health.ok('telescope available')
   else
