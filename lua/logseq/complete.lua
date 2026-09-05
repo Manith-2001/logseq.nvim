@@ -301,6 +301,22 @@ local function cursor_context()
   return line, cur[2] + 1
 end
 
+--- Shaped core items for the current buffer context, or {} outside one.
+--- Shared by omnifunc() and the cmp/blink sources (M10.3) so manual,
+--- auto, and framework paths complete identically.
+---@return LogseqCompleteItem[]
+function M.complete_at_cursor()
+  local line, col = cursor_context()
+  if line == nil or col == nil then
+    return {}
+  end
+  local match = M.find_start(line, col)
+  if match == nil then
+    return {}
+  end
+  return M.complete(match.prefix, { limit = config.get().completion_limit })
+end
+
 --- Standard omnifunc wrapping find_start()/complete(): findstart=1
 --- returns the 0-based prefix col (or -1 outside a context), findstart=0
 --- returns `{word=, menu=}` popup dicts for the re-derived prefix (the
@@ -322,9 +338,8 @@ function M.omnifunc(findstart, base)
   if findstart == 1 then
     return match.startcol - 1
   end
-  local limit = config.get().completion_limit
   local out = {}
-  for _, item in ipairs(M.complete(match.prefix, { limit = limit })) do
+  for _, item in ipairs(M.complete_at_cursor()) do
     table.insert(out, { word = item.title, menu = M.menu(item) })
   end
   return out

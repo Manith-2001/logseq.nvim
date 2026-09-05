@@ -681,11 +681,16 @@ Chosen because `plenary.nvim` is already installed — zero new dependencies.
     - [x] Config: `completion_auto = true`, `completion_limit = 50`
       (defaults + known_keys + validation)
   - M10.3 — nvim-cmp + blink sources (thin wrappers, same core)
-    - [ ] `cmp.lua`: `new()` / `is_available()` / trigger
-      `{ '[', '#' }` / `complete()` → core → callback (only under
-      `pcall(require, 'cmp')`)
-    - [ ] `blink.lua`: parity (`get_completions`, same triggers +
-      availability gate)
+    - [x] `cmp.lua`: `new()` / `is_available()` / trigger
+      `{ '[', '#' }` / `complete()` → core → callback (never
+      auto-registered; only cmp touchpoint is the item-kind lookup
+      under `pcall(require, 'cmp')` with LSP-Text fallback)
+    - [x] `blink.lua`: parity (`get_completions`, same triggers +
+      availability gate, plain LSP item shapes, no blink API refs)
+    - [x] Shared `complete.complete_at_cursor()` so omnifunc, cmp,
+      and blink complete identically; `tests/cmp_spec.lua` +
+      `tests/blink_spec.lua` with stubbed callbacks, no frameworks
+      in CI
   - M10.4 — Docs + health + verify
     - [ ] README + `doc/logseq.txt` completion section
     - [ ] Health completion line
