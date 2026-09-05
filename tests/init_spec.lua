@@ -775,3 +775,144 @@ describe('cycle_todo buffer behavior (M8.4)', function()
     assert.is_true(H.notified(vim.log.levels.WARN, 'not modifiable'))
   end)
 end)
+
+describe('smart_action dispatch (M9.1)', function()
+  local H
+  before_each(function()
+    H = m3_harness()
+    H.setup()
+  end)
+  after_each(function()
+    H.teardown()
+  end)
+
+  -- Scratch buffer on row with 0-based col; opts.root override is threaded
+  -- through to follow_link so link specs stay hermetic (lazy open).
+  local function scratch(lines, row, col)
+    local buf = vim.api.nvim_create_buf(true, false)
+    table.insert(H.bufs, buf)
+    vim.api.nvim_set_current_buf(buf)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    vim.bo[buf].modified = false
+    vim.api.nvim_win_set_cursor(0, { row, col })
+    return buf
+  end
+
+  local function line_of(buf, row)
+    return vim.api.nvim_buf_get_lines(buf, row - 1, row, false)[1]
+  end
+
+  it('follows the link under the cursor', function()
+    local root = H.tmpgraph()
+    scratch({ '- see [[Target]]' }, 1, 8)
+    logseq.smart_action({ root = root })
+    H.track_current()
+    assert.are.equal(vim.fn.resolve(root) .. '/pages/Target.md', vim.api.nvim_buf_get_name(0))
+  end)
+
+  it('prefers the link over the task cycle on a task line', function()
+    local root = H.tmpgraph()
+    local buf = scratch({ '- TODO read [[Target]]' }, 1, 15)
+    logseq.smart_action({ root = root })
+    H.track_current()
+    assert.are.equal(vim.fn.resolve(root) .. '/pages/Target.md', vim.api.nvim_buf_get_name(0))
+    assert.are.equal('- TODO read [[Target]]', line_of(buf, 1))
+  end)
+
+  it('cycles a task line when no link is under the cursor', function()
+    local buf = scratch({ '- TODO x' }, 1, 0)
+    logseq.smart_action()
+    assert.are.equal('- DOING x', line_of(buf, 1))
+    assert.are.same({}, H.notes) -- silent on success
+  end)
+
+  it('falls back to the default <CR> motion on plain prose', function()
+    scratch({ 'first', '  second' }, 1, 0)
+    logseq.smart_action()
+    assert.are.same({ 2, 2 }, vim.api.nvim_win_get_cursor(0))
+    assert.are.same({}, H.notes) -- silent, no root needed
+  end)
+
+  it('fallback needs no graph root and stays silent at the last line', function()
+    vim.fn.chdir('/tmp') -- outside any graph; unnamed buf so cwd applies
+    local buf = scratch({ 'only' }, 1, 0)
+    logseq.smart_action()
+    assert.are.equal(buf, vim.api.nvim_get_current_buf())
+    assert.are.same({ 1, 0 }, vim.api.nvim_win_get_cursor(0))
+    assert.are.same({}, H.notes)
+  end)
+end)
+
+describe('nav_link next/prev (M9.1)', function()
+  local H
+  before_each(function()
+    H = m3_harness()
+    H.setup()
+  end)
+  after_each(function()
+    H.teardown()
+  end)
+
+  local function scratch(lines, row, col)
+    local buf = vim.api.nvim_create_buf(true, false)
+    table.insert(H.bufs, buf)
+    vim.api.nvim_set_current_buf(buf)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    vim.bo[buf].modified = false
+    vim.api.nvim_win_set_cursor(0, { row, col })
+    return buf
+  end
+
+  it('jumps to the next link across lines', function()
+    scratch({ 'see [[A]] here', 'and [[B]]' }, 1, 0)
+    logseq.nav_link('next')
+    assert.are.same({ 1, 4 }, vim.api.nvim_win_get_cursor(0))
+    logseq.nav_link('next')
+    assert.are.same({ 2, 4 }, vim.api.nvim_win_get_cursor(0))
+    assert.are.same({}, H.notes)
+  end)
+
+  it('skips the link under the cursor when moving next', function()
+    -- Cursor sits on the '[' of [[A]] (0-based col 4): next must move on.
+    scratch({ 'see [[A]] and [[B]]' }, 1, 4)
+    logseq.nav_link('next')
+    assert.are.same({ 1, 14 }, vim.api.nvim_win_get_cursor(0))
+  end)
+
+  it('moves to the previous link and stops silently at the start', function()
+    scratch({ 'see [[A]] here', 'and [[B]]' }, 2, 4)
+    logseq.nav_link('prev')
+    assert.are.same({ 1, 4 }, vim.api.nvim_win_get_cursor(0))
+    logseq.nav_link('prev')
+    assert.are.same({ 1, 4 }, vim.api.nvim_win_get_cursor(0)) -- no wrap
+    assert.are.same({}, H.notes)
+  end)
+
+  it('stops silently at the last link without wrapping', function()
+    scratch({ 'see [[A]]' }, 1, 4)
+    logseq.nav_link('next')
+    assert.are.same({ 1, 4 }, vim.api.nvim_win_get_cursor(0))
+    assert.are.same({}, H.notes)
+  end)
+
+  it('does nothing silently when the buffer has no links', function()
+    scratch({ 'plain prose', 'more prose' }, 1, 0)
+    logseq.nav_link('next')
+    logseq.nav_link('prev')
+    assert.are.same({ 1, 0 }, vim.api.nvim_win_get_cursor(0))
+    assert.are.same({}, H.notes)
+  end)
+
+  it('counts hashtags as stops', function()
+    scratch({ 'about #topic here' }, 1, 0)
+    logseq.nav_link('next')
+    assert.are.same({ 1, 6 }, vim.api.nvim_win_get_cursor(0))
+  end)
+
+  it('asserts on an invalid direction', function()
+    scratch({ 'see [[A]]' }, 1, 0)
+    assert.has_error(function()
+      logseq.nav_link('sideways')
+    end)
+  end)
+end)

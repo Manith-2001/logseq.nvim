@@ -7,7 +7,11 @@
 > a parallel agent — untouched by this branch.
 > M7 (TODO view, dual picker + scratch buffer, jump-only v1): in progress on
 > the `feat/todos-view` worktree (`../logseq.nvim-todos`), branched from `main`.
-> M8 (configurable single-line TODO-state cycling): planned, not started.
+> M8 (configurable single-line TODO-state cycling): done on the
+> `feat/todos-view` worktree (M8.1–M8.5 all checked; `make ci` green,
+> manual on a scratch md verified, real graphs untouched).
+> M9 (smart action + link navigation, obsidian.nvim parity): in progress
+> on the `feat/todos-view` worktree (`../logseq.nvim-todos`).
 > Goal: handle Logseq **file-graph** notes directly from Neovim.
 > MVP scope (locked): **find/open pages + follow `[[links]]`** with Logseq's
 > dangling-ref semantics (`[[test]]` creates no `test.md` until content is written).
@@ -450,23 +454,24 @@ Chosen because `plenary.nvim` is already installed — zero new dependencies.
       `parse_line` pattern, preserves indent + `-`/`*` bullets; nil for
       non-task lines
   - M8.3 — Facade + command + `<Plug>`
-    - [ ] `cycle_todo()`: current line → `cycle_line` with
+    - [x] `cycle_todo()`: current line → `cycle_line` with
       `config.get().todo_cycles` → single `nvim_buf_set_lines`;
       WARN when not on a task line / no next state; refuse when
       `&modifiable` is off
-    - [ ] `:LogseqCycleTodo` + `<Plug>(LogseqCycleTodo)` (`hasmapto`
+    - [x] `:LogseqCycleTodo` + `<Plug>(LogseqCycleTodo)` (`hasmapto`
       guard); `idempotency_spec` extended
   - M8.4 — Tests
-    - [ ] `tasks_spec` cycle matrix: every default chain, DONE→TODO wrap,
+    - [x] `tasks_spec` cycle matrix: every default chain, DONE→TODO wrap,
       custom chains (incl. skip-DOING), indent/bullet preservation,
-      non-task → nil
-    - [ ] `init_spec` buffer behavior: advance, wrap, off-task WARN,
-      unmodifiable refusal
+      non-task → nil (done in M8.2)
+    - [x] `init_spec` buffer behavior: advance, wrap, off-task WARN,
+      unmodifiable refusal (+ silent success, cursor kept, custom `g:`
+      chain, single-undo restore); `idempotency_spec` (done in M8.3)
   - M8.5 — Docs + verify
-    - [ ] README scope line rewritten (single-line cycling in, multi-line
+    - [x] README scope line rewritten (single-line cycling in, multi-line
       / timestamps out) + usage row + maps + `todo_cycles` example
-    - [ ] `doc/logseq.txt` section (chains, wrap, precedence, keys)
-    - [ ] `make ci` green; `stylua --check` clean; manual on a scratch md
+    - [x] `doc/logseq.txt` section (chains, wrap, precedence, keys)
+    - [x] `make ci` green; `stylua --check` clean; manual on a scratch md
       only (never real graphs — first write op): full rotation, custom
       chain, off-task WARN, `u` undoes one step
 - **Verify:** `make ci` green (160 existing + new specs); manual per M8.5
@@ -474,6 +479,89 @@ Chosen because `plenary.nvim` is already installed — zero new dependencies.
 - **Non-goals (v1):** visual/multi-line cycling, LOGBOOK timestamps,
   cycling from `:LogseqTodosView` (view stays jump-only), auto
   keybinding, marker stripping.
+
+### M9 — Smart action (`<CR>`) + link navigation (`[o` / `]o`)
+
+- **Scope:** obsidian.nvim parity for context-aware `<CR>` plus
+  next/prev-link jumps, adapted to Logseq semantics. Reference:
+  obsidian.nvim `lua/obsidian/actions.lua` `smart_action` (~line 103:
+  link → tag → heading/fold → checkbox → fallback `<CR>`) and
+  `nav_link(direction)` (~line 65: first match strictly after/before
+  the cursor, no wrap, silent at ends). M8's `cycle_todo` *is* the
+  checkbox branch; `follow_link` already covers all three parser kinds
+  (`[[..]]`, `#[[..]]`, `#tag` → opens `pages/<tag>.md`), so no new
+  scanner and no tag picker are needed.
+- **Decisions (locked with user, 2026-09-06):**
+  - Dispatch order: link-first (obsidian parity — a `[[link]]` under the
+    cursor wins even inside a `- TODO` line), then task line →
+    `cycle_todo()`, else silent fallback to the default normal-mode
+    `<CR>` motion (first non-blank, next line), fed noremap so it can't
+    recurse. Fallback makes the auto-bound `<CR>` safe on plain prose.
+  - Tag branch = follow (open the tag page, today's behavior). No tag
+    picker v1.
+  - No fold/heading handling at all — folding stays entirely the user's
+    setup; smart_action never sends `za`.
+  - Buffer-local `<CR>` in graph markdown files (deliberate, documented
+    exception to the no-default-keys convention): `after/ftplugin/
+    markdown.lua` maps `<CR>` → `<Plug>(LogseqSmartAction)`, `[o` /
+    `]o` → prev/next link, each only when the buffer has no such map
+    yet (`nvim_buf_get_keymap` guard — user maps are never clobbered).
+    Non-graph markdown untouched (early return stays); `logseq-todos`
+    / `logseq-graph` views keep their own buffer-local `<CR>`
+    (different filetypes, no conflict).
+  - `nav_link` parity: all `parser.links_in_line` matches count as
+    stops (no namespace filtering); cursor lands on match start
+    (1-based `col_start` → 0-based cursor col); no wrap-around, silent
+    at buffer ends; invalid direction asserts.
+- **Config:** none (no new keys v1).
+- **Files:**
+  - `lua/logseq/init.lua` (`M.smart_action()` dispatcher,
+    `M.nav_link(direction)` + local `buffer_links(buf)` helper:
+    `nvim_buf_get_lines` + `links_in_line` → `{lnum=, col=}` list)
+  - `plugin/logseq.lua` (`:LogseqSmartAction`, `:LogseqNextLink`,
+    `:LogseqPrevLink` + three `<Plug>` maps with `hasmapto` guards,
+    idempotent)
+  - `after/ftplugin/markdown.lua` (buffer-local `<CR>` / `[o` / `]o`
+    with no-clobber guards)
+  - `doc/logseq.txt`, `README.md` (branch order, link-wins example,
+    fallback motion, bindings table + remove/override recipe)
+  - Tests: extend `init_spec.lua`, `idempotency_spec.lua`, new
+    ftplugin spec
+- **Tasks:**
+  - M9.1 — Facade (`init.lua`)
+    - [x] `smart_action()`: link under cursor → `follow_link()`; else
+      task line (`tasks.parse_line`) → `cycle_todo()`; else fallback
+      feeds `<CR>` noremap (default motion, silent)
+    - [x] `nav_link(direction)`: `buffer_links()` scan, strict
+      after/before cursor compare (1-based col vs `col_start`, so a
+      cursor *on* a link moves to the next one), set cursor on match
+      start, silent no-op at ends; assert on bad direction
+  - M9.2 — Commands + `<Plug>` + ftplugin
+    - [ ] `:LogseqSmartAction` / `:LogseqNextLink` / `:LogseqPrevLink`
+      + `<Plug>(LogseqSmartAction)` / `<Plug>(LogseqNextLink)` /
+      `<Plug>(LogseqPrevLink)` (`hasmapto` guards, idempotent)
+    - [ ] ftplugin buffer-local `<CR>` / `[o` / `]o` with
+      `nvim_buf_get_keymap` no-clobber guards (graph files only)
+  - M9.3 — Tests (spec-first per §8)
+    - [ ] `init_spec`: dispatch (link line follows incl. link-inside-task
+      priority proof, task line cycles, prose line falls back = cursor
+      down, no notify); `nav_link` next/prev incl. same-line skip,
+      multi-line, silent at ends, invalid-arg assert
+    - [ ] `idempotency_spec`: 3 commands + 3 `<Plug>` mapargs
+    - [ ] ftplugin spec: fixture-graph page gets buffer-local
+      `<CR>`/`[o`/`]o`; non-graph markdown file gets none (check
+      `minimal_init.lua` enables filetype plugins; else explicit
+      `:runtime` in the spec)
+  - M9.4 — Docs + verify
+    - [ ] README + `doc/logseq.txt` smart-action section (order,
+      fallback, bindings, override recipe, no-folding note)
+    - [ ] `make ci` green; `stylua --check` clean; manual on a scratch
+      graph only: `<CR>` on link / tag / task / prose lines, `[o`/`]o`
+      across a page, pre-set buffer-local `<CR>` survives ftplugin
+- **Verify:** `make ci` green (existing + ~10 new specs); manual per
+  M9.4 on a scratch file; real graphs untouched.
+- **Non-goals (v1):** tag picker, any fold setup or `za`, wrap-around
+  navigation, namespace filtering in `nav_link`, visual-mode support.
 
 ## 8. Open questions / discovery tasks (do during M0–M1, not now)
 

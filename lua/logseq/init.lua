@@ -514,4 +514,83 @@ function M.cycle_todo()
   pcall(vim.api.nvim_win_set_cursor, 0, { row, math.min(col, #newline) })
 end
 
+--- Collect every link in buffer buf as {lnum=, col=} stops (M9.1):
+--- 1-based line number plus the 1-based col_start of each
+--- parser.links_in_line() match, in buffer order.
+---@param buf integer
+---@return table[] {lnum: integer, col: integer}[]
+local function buffer_links(buf)
+  local parser = require('logseq.parser')
+  local out = {}
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  for lnum, line in ipairs(lines) do
+    for _, link in ipairs(parser.links_in_line(line)) do
+      table.insert(out, { lnum = lnum, col = link.col_start })
+    end
+  end
+  return out
+end
+
+--- Context-aware action for `<CR>` (M9.1, obsidian.nvim smart_action
+--- parity minus folding): link under cursor (any kind, even inside a
+--- task line) → follow_link(); else task line → cycle_todo(); else
+--- fall back to the default normal-mode `<CR>` motion (first non-blank
+--- of the next line) via `normal!`, which ignores mappings and so can
+--- never recurse into the caller's `<CR>` map. opts.root threads
+--- through to follow_link (used by tests).
+---@param opts table|nil ({root=} override)
+function M.smart_action(opts)
+  opts = opts or {}
+  local parser = require('logseq.parser')
+  local ok, line = pcall(vim.api.nvim_get_current_line)
+  if not ok then
+    return
+  end
+  -- nvim_win_get_cursor col is 0-based; the parser uses 1-based cols.
+  local col = vim.api.nvim_win_get_cursor(0)[2] + 1
+  if parser.link_under_cursor(line, col) then
+    M.follow_link(opts)
+    return
+  end
+  if require('logseq.tasks').parse_line(line) then
+    M.cycle_todo()
+    return
+  end
+  -- Plain prose: behave exactly like unmapped <CR>. `+` is the same
+  -- motion; silent! keeps the last line a quiet no-op.
+  pcall(vim.cmd, 'silent! normal! +')
+end
+
+--- Jump to the next/previous link in the current buffer (M9.1,
+--- obsidian.nvim nav_link parity): the first stop strictly after
+--- ('next') or before ('prev') the cursor wins, so a cursor sitting on
+--- a link moves on to the neighboring one. No wrap-around: a silent
+--- no-op at the ends and in link-free buffers.
+---@param direction string 'next' | 'prev'
+function M.nav_link(direction)
+  assert(direction == 'next' or direction == 'prev', 'nav_link: direction must be "next" or "prev"')
+  local matches = buffer_links(vim.api.nvim_get_current_buf())
+  if #matches == 0 then
+    return
+  end
+  local cur = vim.api.nvim_win_get_cursor(0)
+  local row, col = cur[1], cur[2] + 1 -- 1-based col, like the parser
+  if direction == 'next' then
+    for _, m in ipairs(matches) do
+      if m.lnum > row or (m.lnum == row and col < m.col) then
+        pcall(vim.api.nvim_win_set_cursor, 0, { m.lnum, m.col - 1 })
+        return
+      end
+    end
+    return
+  end
+  for i = #matches, 1, -1 do
+    local m = matches[i]
+    if m.lnum < row or (m.lnum == row and col > m.col) then
+      pcall(vim.api.nvim_win_set_cursor, 0, { m.lnum, m.col - 1 })
+      return
+    end
+  end
+end
+
 return M
