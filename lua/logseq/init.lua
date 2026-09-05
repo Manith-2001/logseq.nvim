@@ -1,5 +1,5 @@
 --- Public facade. M1: find_files(); M2: follow_link(); M3: today()/new_page();
---- M5.3: switch_graph().
+--- M5.3: switch_graph(); M6.2: graph_view().
 local config = require('logseq.config')
 
 local M = {}
@@ -160,6 +160,27 @@ function M.new_page(title, opts)
   end)
 end
 
+--- Derive the center title from the current buffer when it is a page or
+--- journal directly under root (symlink-resolved on both sides, like the
+--- M3 specs). Returns nil for unnamed buffers and files outside the graph.
+---@param root string absolute graph root
+---@return string|nil
+local function title_from_buffer(root)
+  local name = vim.api.nvim_buf_get_name(0)
+  if name == '' then
+    return nil
+  end
+  local resolved = vim.fn.resolve(name)
+  local base = vim.fn.resolve(root)
+  for _, sub in ipairs({ config.get().pages_dir, config.get().journals_dir }) do
+    local prefix = base .. '/' .. sub .. '/'
+    if resolved:sub(1, #prefix) == prefix and resolved:sub(-3) == '.md' then
+      return resolved:sub(#prefix + 1, -4)
+    end
+  end
+  return nil
+end
+
 --- Pick the active graph (M5.3, multi-graph switching) via Telescope
 --- (vim.ui.select fallback). Items = graph_path ∪ discovered roots ∪ the
 --- current active (so an override is listed — and clearable — even when it
@@ -221,6 +242,69 @@ function M.switch_graph()
       vim.notify(('logseq.nvim: active graph: %s'):format(choice.name), vim.log.levels.INFO)
     end,
   })
+end
+
+--- Open the local graph explorer (M6.2) for one page: Linked +
+--- Backlinks (+ `2 hops` at depth 2) in a scratch `filetype=logseq-graph`
+--- buffer. The center title comes from opts.title (or :LogseqGraph's
+--- [title] arg), else the current pages/*/journals/* buffer, else a
+--- prompt; cancelling aborts quietly. The index builds synchronously and
+--- refuses graphs over graph_max_files with a warning (raise the key to
+--- opt in). opts.root overrides root resolution (used by tests).
+---@param opts table|nil ({title=, depth=, root=}; :LogseqGraph cmd_opts tolerated)
+---@return integer|nil explorer bufnr, or nil when aborted
+function M.graph_view(opts)
+  opts = opts or {}
+  if
+    type(opts.title) ~= 'string'
+    and opts.root == nil
+    and type(opts.args) == 'string'
+    and opts.args ~= ''
+  then
+    opts = { title = opts.args } -- :LogseqGraph cmd_opts: .args holds the title
+  end
+  local root = resolve_root(opts)
+  if not root then
+    return nil
+  end
+  local cfg = config.get()
+  local depth = (opts.depth == 2 or cfg.graph_depth == 2) and 2 or 1
+  local count = #require('logseq.graph').list_pages(root)
+  if count > cfg.graph_max_files then
+    vim.notify(
+      ('logseq.nvim: graph too large (%d files > %d graph_max_files); raise graph_max_files to explore it'):format(
+        count,
+        cfg.graph_max_files
+      ),
+      vim.log.levels.WARN
+    )
+    return nil
+  end
+  local title = opts.title
+  if type(title) == 'string' and title:match('^%s*$') then
+    title = nil -- blank behaves like no title: derive, then prompt
+  end
+  if title == nil then
+    title = title_from_buffer(root)
+  end
+  if title ~= nil then
+    if not check_no_namespace(title) then
+      return nil
+    end
+    return require('logseq.view').open({ root = root, title = title, depth = depth })
+  end
+  local bufnr = nil
+  vim.ui.input({ prompt = 'Logseq graph page: ' }, function(input)
+    if input == nil or input:match('^%s*$') then
+      vim.notify('logseq.nvim: graph view cancelled', vim.log.levels.INFO)
+      return
+    end
+    if not check_no_namespace(input) then
+      return
+    end
+    bufnr = require('logseq.view').open({ root = root, title = input, depth = depth })
+  end)
+  return bufnr
 end
 
 return M

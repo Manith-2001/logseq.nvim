@@ -46,6 +46,7 @@ Then `:helptags ALL` (once, so `:help logseq` works) and `:checkhealth logseq`.
 | `:LogseqToday`       | Open today's journal (`journals/YYYY_MM_DD.md`)           |
 | `:LogseqNew [title]` | Open a page; prompts for the title when omitted           |
 | `:LogseqGraphs`      | Pick the active graph (multi-graph switching, see below)  |
+| `:LogseqGraph [title]` | Explore a page's links (Linked + Backlinks) in a scratch buffer |
 
 Only `<Plug>(LogseqFollow)` is provided — no keys are bound by default.
 Suggested opt-in bind:
@@ -55,7 +56,8 @@ vim.keymap.set('n', 'gf', '<Plug>(LogseqFollow)')
 ```
 
 Lua API mirrors the commands: `require('logseq').find_files()`,
-`.follow_link()`, `.today()`, `.new_page(title)`, `.switch_graph()`.
+`.follow_link()`, `.today()`, `.new_page(title)`, `.switch_graph()`,
+`.graph_view(opts)` (`{title=, depth=1|2, root=}`).
 
 ## Configuration
 
@@ -68,8 +70,16 @@ Lua API mirrors the commands: `require('logseq').find_files()`,
   picker = 'telescope',        -- vim.ui.select fallback is automatic
   graphs_dirs = {},            -- parent dirs scanned for graphs (multi-graph)
   graphs_depth = 2,            -- how deep to scan under each dir
+  graph_depth = 1,             -- :LogseqGraph explorer depth (1 or 2 hops)
+  graph_max_files = 2000,      -- max files indexed synchronously (else warns)
 }
 ```
+
+The explorer centers on the given title, the current `pages/*` /
+`journals/*` buffer, or a prompt. `●` = the target file exists,
+`○` = dangling (opens lazily, nothing written until content + `:w`).
+Buffer keys: `<CR>` / `gf` open the entry, `q` closes, `r` refreshes,
+`1` / `2` set depth, `T` toggles dangling entries.
 
 Unknown keys are not errors; `:checkhealth logseq` reports them.
 

@@ -6,6 +6,8 @@
 ---@field picker string 'telescope' (with vim.ui.select fallback)
 ---@field graphs_dirs string[] parent dirs scanned for graphs (M5, default {})
 ---@field graphs_depth integer max levels below each scan dir (M5, default 2)
+---@field graph_depth integer explorer depth for :LogseqGraph (M6.2, default 1)
+---@field graph_max_files integer max files indexed synchronously (M6.2, default 2000)
 
 local M = {}
 
@@ -18,6 +20,8 @@ local defaults = {
   picker = 'telescope',
   graphs_dirs = {},
   graphs_depth = 2,
+  graph_depth = 1,
+  graph_max_files = 2000,
 }
 
 --- Explicit opts from setup() calls (highest precedence layer).
@@ -39,6 +43,8 @@ local known_keys = {
   picker = true,
   graphs_dirs = true,
   graphs_depth = true,
+  graph_depth = true,
+  graph_max_files = true,
 }
 
 local function warn_unknown(opts)
@@ -69,6 +75,8 @@ function M.setup(opts)
     picker = { current.picker, 'string' },
     graphs_dirs = { current.graphs_dirs, 'table' },
     graphs_depth = { current.graphs_depth, 'number' },
+    graph_depth = { current.graph_depth, 'number' },
+    graph_max_files = { current.graph_max_files, 'number' },
   })
   return current
 end

@@ -16,6 +16,7 @@ CONTENTS                                                *logseq-contents*
   8. Health ........................... |logseq-health|
   9. Semantics ........................ |logseq-semantics|
   10. Multiple graphs ................. |logseq-multigraph|
+  11. Graph explorer .................. |logseq-graphview|
 
 ==============================================================================
 1. INTRO                                                *logseq-intro*
@@ -66,6 +67,8 @@ After install, run `:helptags ALL` once so this help is indexed, then
 - `:LogseqNew [title]` .. open a page; prompts when no title is given.
 - `:LogseqGraphs` ....... pick the active graph (see
   |logseq-multigraph|).
+- `:LogseqGraph [title]`  explore a page's links (Linked + Backlinks)
+  in a scratch buffer (see |logseq-graphview|).
 
 Markdown buffers inside a graph get buffer-local treatment only
 (`b:logseq_root` is set, hard tabs are kept literal for Logseq-style
@@ -102,6 +105,19 @@ unless you map them (see |logseq-mappings|).
     (|vim.ui.select| fallback). The `(auto)` entry clears the
     override; choosing persists the choice and notifies.
 
+                                                           *:LogseqGraph*
+:LogseqGraph [title]
+    Explore one page's links in a scratch `filetype=logseq-graph`
+    buffer: Linked + Backlinks sections (`2 hops` at depth 2). The
+    center is `[title]`, else the current `pages/*` / `journals/*`
+    buffer, else a prompt. `●` = the target file exists, `○` =
+    dangling (opens lazily, nothing is written until content +
+    `:w`). Buffer-local keys: `<CR>` / `gf` open the entry under the
+    cursor, `q` closes, `r` refreshes, `1` / `2` set the depth, `T`
+    toggles dangling entries. The index builds synchronously and
+    refuses graphs over |logseq-config| `graph_max_files` with a
+    warning. See |logseq-graphview|.
+
 ==============================================================================
 6. MAPPINGS                                          *logseq-mappings*
 
@@ -123,6 +139,8 @@ All keys, with defaults: >lua
       picker = 'telescope',    -- (vim.ui.select fallback is automatic)
       graphs_dirs = {},        -- parent dirs scanned for graphs
       graphs_depth = 2,        -- how deep to scan under each dir
+      graph_depth = 1,         -- :LogseqGraph explorer depth (1 or 2)
+      graph_max_files = 2000,  -- max files indexed synchronously
     }
 <
 Set via `vim.g.logseq` or `require('logseq').setup(opts)`.
@@ -201,5 +219,17 @@ Root resolution order, first hit wins:
 Scope follows the root: `:LogseqFind` lists only the current graph's
 pages and journals, and `:LogseqToday` opens into its `journals/`.
 Switching never `:cd`s and never touches other buffers.
+
+==============================================================================
+11. GRAPH EXPLORER                               *logseq-graphview*
+
+`:LogseqGraph [title]` renders the M6.1 link index for one page — no
+new dependencies, no async machinery: the index builds synchronously
+over `pages/*.md` + `journals/*.md` and refuses graphs over
+|logseq-config| `graph_max_files` (default 2000) with a warning
+instead of stalling. Namespace targets (`[[a/b]]`) are skipped by the
+index, matching the facade's out-of-scope refusal (see
+|logseq-semantics|); self-loops list under Linked but never as their
+own backlink.
 
   vim:tw=78:ts=8:ft=help:norl:

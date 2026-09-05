@@ -15,6 +15,7 @@ cmd('LogseqFollow', 'follow_link', { desc = 'Logseq: follow [[link]] under curso
 cmd('LogseqToday', 'today', { desc = 'Logseq: open today journal' })
 cmd('LogseqNew', 'new_page', { desc = 'Logseq: new page', nargs = '?' })
 cmd('LogseqGraphs', 'switch_graph', { desc = 'Logseq: switch active graph' })
+cmd('LogseqGraph', 'graph_view', { desc = 'Logseq: explore page links', nargs = '?' })
 
 -- <Plug> mapping only; never steal gf/<leader> unconditionally.
 -- Suggested user bind (README, M3): vim.keymap.set('n', 'gf', '<Plug>(LogseqFollow)')
