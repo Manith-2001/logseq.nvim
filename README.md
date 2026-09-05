@@ -8,6 +8,10 @@ no file is created until you add content and `:w`).
 Scope: file graphs (`pages/*.md`, `journals/*.md`) only. Logseq DB graphs
 (`*.sqlite`), block refs, queries, and task management are out of scope.
 
+Several file graphs are supported: point `graphs_dirs` at parent
+directories and switch between the discovered graphs with
+`:LogseqGraphs`. Opt-in — single-graph setups behave exactly as before.
+
 ## Requirements
 
 - Neovim 0.12+
@@ -41,6 +45,7 @@ Then `:helptags ALL` (once, so `:help logseq` works) and `:checkhealth logseq`.
 | `:LogseqFollow`      | Open the `[[link]]`, `#[[link]]`, or `#tag` under cursor  |
 | `:LogseqToday`       | Open today's journal (`journals/YYYY_MM_DD.md`)           |
 | `:LogseqNew [title]` | Open a page; prompts for the title when omitted           |
+| `:LogseqGraphs`      | Pick the active graph (multi-graph switching, see below)  |
 
 Only `<Plug>(LogseqFollow)` is provided — no keys are bound by default.
 Suggested opt-in bind:
@@ -50,7 +55,7 @@ vim.keymap.set('n', 'gf', '<Plug>(LogseqFollow)')
 ```
 
 Lua API mirrors the commands: `require('logseq').find_files()`,
-`.follow_link()`, `.today()`, `.new_page(title)`.
+`.follow_link()`, `.today()`, `.new_page(title)`, `.switch_graph()`.
 
 ## Configuration
 
@@ -61,10 +66,38 @@ Lua API mirrors the commands: `require('logseq').find_files()`,
   journals_dir = 'journals',
   journal_format = '%Y_%m_%d', -- os.date format for journal filenames
   picker = 'telescope',        -- vim.ui.select fallback is automatic
+  graphs_dirs = {},            -- parent dirs scanned for graphs (multi-graph)
+  graphs_depth = 2,            -- how deep to scan under each dir
 }
 ```
 
 Unknown keys are not errors; `:checkhealth logseq` reports them.
+
+## Multiple graphs
+
+```lua
+vim.g.logseq = {
+  graphs_dirs = { '~/dev', '~/notes' }, -- parent dirs scanned for graphs
+  graphs_depth = 2,                      -- how deep to scan under each dir
+}
+```
+
+Graphs are auto-discovered by scanning for `logseq/config.edn` or
+`pages/`+`journals/` siblings (hidden dirs skipped, symlinks not followed,
+missing dirs scan as empty). `:LogseqGraphs` picks the active graph — the
+finder then lists only that graph's pages and journals resolve into it.
+The `(auto)` entry clears the override. The choice persists across
+restarts in `stdpath('data')/logseq.nvim/active`.
+
+Root resolution order: explicit per-call `opts.root`, then the current
+buffer's graph (a buffer inside a graph always wins, even over the
+override), then the active graph, then `graph_path` (strict — a
+configured-but-missing path resolves to nothing), then the working
+directory. `:checkhealth logseq` shows the discovered graphs and which
+step resolved the effective graph (`buffer:…` / `active:…` / `graph_path` /
+`auto:…`), plus a warning when the stored choice went stale.
+
+Switching never `:cd`s and never touches buffers outside the target graph.
 
 Markdown buffers inside a graph get buffer-local treatment only
 (`b:logseq_root`, hard tabs kept literal for Logseq-style block nesting).

@@ -15,6 +15,7 @@ CONTENTS                                                *logseq-contents*
   7. Configuration .................... |logseq-config|
   8. Health ........................... |logseq-health|
   9. Semantics ........................ |logseq-semantics|
+  10. Multiple graphs ................. |logseq-multigraph|
 
 ==============================================================================
 1. INTRO                                                *logseq-intro*
@@ -63,6 +64,8 @@ After install, run `:helptags ALL` once so this help is indexed, then
 - `:LogseqFollow` ....... open the |[[link]]| under the cursor.
 - `:LogseqToday` ........ open today's journal page.
 - `:LogseqNew [title]` .. open a page; prompts when no title is given.
+- `:LogseqGraphs` ....... pick the active graph (see
+  |logseq-multigraph|).
 
 Markdown buffers inside a graph get buffer-local treatment only
 (`b:logseq_root` is set, hard tabs are kept literal for Logseq-style
@@ -88,10 +91,16 @@ unless you map them (see |logseq-mappings|).
     Open `journals/<date>.md` for today, where `<date>` follows
     |logseq-config| `journal_format` (default `%Y_%m_%d`).
 
-                                                             *:LogseqNew*
+                                                              *:LogseqNew*
 :LogseqNew [title]
     Open `pages/<title>.md`. Prompts via |vim.ui.input| when no
     title is given; cancelling aborts quietly.
+
+                                                          *:LogseqGraphs*
+:LogseqGraphs
+    Pick the active graph (see |logseq-multigraph|) via Telescope
+    (|vim.ui.select| fallback). The `(auto)` entry clears the
+    override; choosing persists the choice and notifies.
 
 ==============================================================================
 6. MAPPINGS                                          *logseq-mappings*
@@ -112,23 +121,29 @@ All keys, with defaults: >lua
       journals_dir = 'journals',
       journal_format = '%Y_%m_%d', -- os.date format for journal stems
       picker = 'telescope',    -- (vim.ui.select fallback is automatic)
+      graphs_dirs = {},        -- parent dirs scanned for graphs
+      graphs_depth = 2,        -- how deep to scan under each dir
     }
 <
 Set via `vim.g.logseq` or `require('logseq').setup(opts)`.
 Unknown keys are not errors; they are reported by |:checkhealth|.
 
-Root resolution order: explicit `graph_path` (strict — a configured
-but missing path resolves to nothing rather than guessing), else an
-upward search from the current buffer (a directory containing
-`logseq/config.edn`, or `pages/` + `journals/` siblings), else the
-working directory.
+Root resolution order (see |logseq-multigraph|): explicit per-call
+`opts.root`, then the current buffer's graph (a buffer inside a graph
+always wins, even over the active override), then the active graph,
+then `graph_path` (strict — a configured-but-missing path resolves to
+nothing rather than guessing), then the working directory.
 
 ==============================================================================
 8. HEALTH                                              *logseq-health*
 
-:checkhealth logseq verifies: Neovim version, graph readability,
-`pages/` + `journals/` presence, Telescope availability (warn-only),
-and unknown config keys (warn-only).
+:checkhealth logseq verifies: Neovim version, discovered graphs
+(count + names; single-graph mode when `graphs_dirs` is unset), the
+effective graph and the step that resolved it (`buffer:…` / `active:…` /
+`graph_path` / `auto:…`), a warning when the stored active-graph entry
+went stale, graph readability, `pages/` + `journals/` presence,
+Telescope availability (warn-only), and unknown config keys
+(warn-only).
 
 ==============================================================================
 9. SEMANTICS                                        *logseq-semantics*
@@ -148,4 +163,43 @@ would diverge from Logseq. Titles containing `/` are refused with a
 warning instead of opening a buffer that could never round-trip
 (namespaces are out of scope for v0.1, see |logseq-intro|).
 
- vim:tw=78:ts=8:ft=help:norl:
+==============================================================================
+10. MULTIPLE GRAPHS                               *logseq-multigraph*
+
+Several file graphs are supported. Point |logseq-config| `graphs_dirs`
+at parent directories and switch between the discovered graphs with
+|:LogseqGraphs|. Opt-in: with `graphs_dirs` unset, behavior is exactly
+single-graph v0.1. >lua
+    vim.g.logseq = {
+      graphs_dirs = { '~/dev', '~/notes' },
+      graphs_depth = 2,
+    }
+<
+Graphs are auto-discovered by scanning for `logseq/config.edn` or
+`pages/` + `journals/` siblings. Hidden directories are skipped,
+symlinks are not followed, and missing scan dirs scan as empty. The
+scan runs on demand (picker open, |:checkhealth|) — never at startup,
+so there is no cache to invalidate.
+
+The picker lists `graph_path` plus every discovered graph as
+`name — path`, and the `(auto)` entry clears the override back to
+plain resolution. Choosing sets the active graph, persists it to
+`stdpath('data')/logseq.nvim/active` so it survives restarts, and
+notifies. With nothing to offer it warns and hints at `graphs_dirs`;
+a stale `graph_path` stays listed and errors loudly on selection
+rather than resolving elsewhere.
+
+Root resolution order, first hit wins:
+1. Explicit per-call `opts.root`.
+2. The current buffer's graph — a buffer inside a graph always wins,
+   even when `graph_path` is set or another graph is active.
+3. The active graph, if still a valid root.
+4. `graph_path`, strict: set-but-missing resolves to nothing (no
+   silent fallback to the working directory).
+5. Upward search from the working directory.
+
+Scope follows the root: `:LogseqFind` lists only the current graph's
+pages and journals, and `:LogseqToday` opens into its `journals/`.
+Switching never `:cd`s and never touches other buffers.
+
+  vim:tw=78:ts=8:ft=help:norl:
