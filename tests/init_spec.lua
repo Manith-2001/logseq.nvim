@@ -390,7 +390,7 @@ describe('resolution order end-to-end (M5.3)', function()
     assert.are.equal('Logseq Pages — ' .. vim.fn.fnamemodify(b, ':t'), prompt)
   end)
 
-  it('active beats buffer in find_files (search scope follows :LogseqGraphs)', function()
+  it('active beats buffer in find_files (search scope follows :LogseqSwitchGraph)', function()
     local a = H.tmpgraph()
     local b = H.tmpgraph()
     vim.fn.writefile({ '- x' }, a .. '/pages/A.md')

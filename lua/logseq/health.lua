@@ -23,12 +23,12 @@ local function report_graphs(cfg)
     vim.health.ok(('discovered %d graph(s): %s'):format(#known, table.concat(names, ', ')))
   end
   -- A stored entry that no longer validates is ignored silently by
-  -- get_active(); surface it here so it can be reset via :LogseqGraphs.
+  -- get_active(); surface it here so it can be reset via :LogseqSwitchGraph.
   local entry = g.state_entry()
   local active = g.get_active()
   if entry ~= nil and active ~= entry then
     vim.health.warn(
-      ('stale active-graph entry ignored: %s (pick :LogseqGraphs to reset)'):format(entry)
+      ('stale active-graph entry ignored: %s (pick :LogseqSwitchGraph to reset)'):format(entry)
     )
   end
   -- Effective root plus the resolution step that produced it (M5.3 order:
@@ -56,7 +56,7 @@ local function report_graphs(cfg)
     return
   else
     vim.health.warn(
-      'no graph resolved (open a file inside a graph, set graph_path, or pick :LogseqGraphs)'
+      'no graph resolved (open a file inside a graph, set graph_path, or pick :LogseqSwitchGraph)'
     )
     return
   end

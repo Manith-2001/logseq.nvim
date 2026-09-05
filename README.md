@@ -12,7 +12,7 @@ line at a time — no multi-line cycling, no timestamps/LOGBOOK).
 
 Several file graphs are supported: point `graphs_dirs` at parent
 directories and switch between the discovered graphs with
-`:LogseqGraphs`. Opt-in — single-graph setups behave exactly as before.
+`:LogseqSwitchGraph`. Opt-in — single-graph setups behave exactly as before.
 
 ## Requirements
 
@@ -47,7 +47,7 @@ Then `:helptags ALL` (once, so `:help logseq` works) and `:checkhealth logseq`.
 | `:LogseqFollow`      | Open the `[[link]]`, `#[[link]]`, or `#tag` under cursor  |
 | `:LogseqToday`       | Open today's journal (`journals/YYYY_MM_DD.md`)           |
 | `:LogseqNew [title]` | Open a page; prompts for the title when omitted           |
-| `:LogseqGraphs`      | Pick the active graph (multi-graph switching, see below)  |
+| `:LogseqSwitchGraph` | Pick the active graph (multi-graph switching, see below)  |
 | `:LogseqGraph [title]` | Explore a page's links (Linked + Backlinks) in a scratch buffer |
 | `:LogseqTodos`       | Pick a `- TODO` task via Telescope and jump to its line   |
 | `:LogseqTodosView`   | See all tasks grouped by file (`<CR>` jumps, `q` closes)  |
@@ -204,7 +204,7 @@ vim.g.logseq = {
 
 Graphs are auto-discovered by scanning for `logseq/config.edn` or
 `pages/`+`journals/` siblings (hidden dirs skipped, symlinks not followed,
-missing dirs scan as empty). `:LogseqGraphs` picks the active graph — the
+missing dirs scan as empty). `:LogseqSwitchGraph` picks the active graph — the
 finder then lists only that graph's pages and journals resolve into it.
 The `(auto)` entry clears the override. The choice persists across
 restarts in `stdpath('data')/logseq.nvim/active`.

@@ -32,7 +32,7 @@ local function resolve_root(opts, prefer_active)
   local root = graph.find_root()
   if not root then
     vim.notify(
-      'logseq.nvim: graph root not found (set graph_path, pick :LogseqGraphs, or open a file inside the graph)',
+      'logseq.nvim: graph root not found (set graph_path, pick :LogseqSwitchGraph, or open a file inside the graph)',
       vim.log.levels.ERROR
     )
     return nil
@@ -59,7 +59,7 @@ end
 --- Find/open pages + journals via Telescope (vim.ui.select fallback).
 --- opts.root overrides root resolution (used by tests); otherwise
 --- the active graph beats the current buffer (search scope follows
---- :LogseqGraphs, so a buffer in another graph doesn't hijack results),
+--- :LogseqSwitchGraph, so a buffer in another graph doesn't hijack results),
 --- then buffer → graph_path → cwd.
 --- The picker title shows the graph name so the scope is visible.
 ---@param opts table|nil
@@ -245,7 +245,7 @@ function M.switch_graph()
   end
   offer('(auto)', nil)
   require('logseq.telescope').pick(items, {
-    prompt_title = 'Logseq Graphs',
+    prompt_title = 'Logseq Switch Graph',
     on_choice = function(choice)
       if choice.path == nil then
         graph.clear_active()

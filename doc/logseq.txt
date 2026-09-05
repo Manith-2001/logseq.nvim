@@ -70,7 +70,7 @@ After install, run `:helptags ALL` once so this help is indexed, then
 - `:LogseqFollow` ....... open the |[[link]]| under the cursor.
 - `:LogseqToday` ........ open today's journal page.
 - `:LogseqNew [title]` .. open a page; prompts when no title is given.
-- `:LogseqGraphs` ....... pick the active graph (see
+- `:LogseqSwitchGraph`  pick the active graph (see
   |logseq-multigraph|).
 - `:LogseqGraph [title]`  explore a page's links (Linked + Backlinks)
   in a scratch buffer (see |logseq-graphview|).
@@ -116,8 +116,8 @@ changed; pre-existing maps are never clobbered (see
     Open `pages/<title>.md`. Prompts via |vim.ui.input| when no
     title is given; cancelling aborts quietly.
 
-                                                          *:LogseqGraphs*
-:LogseqGraphs
+                                                     *:LogseqSwitchGraph*
+:LogseqSwitchGraph
     Pick the active graph (see |logseq-multigraph|) via Telescope
     (|vim.ui.select| fallback). The `(auto)` entry clears the
     override; choosing persists the choice and notifies.
@@ -281,7 +281,7 @@ warning instead of opening a buffer that could never round-trip
 
 Several file graphs are supported. Point |logseq-config| `graphs_dirs`
 at parent directories and switch between the discovered graphs with
-|:LogseqGraphs|. Opt-in: with `graphs_dirs` unset, behavior is exactly
+|:LogseqSwitchGraph|. Opt-in: with `graphs_dirs` unset, behavior is exactly
 single-graph v0.1. >lua
     vim.g.logseq = {
       graphs_dirs = { '~/dev', '~/notes' },

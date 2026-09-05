@@ -42,7 +42,7 @@ describe('idempotency (M4)', function()
       'LogseqFollow',
       'LogseqToday',
       'LogseqNew',
-      'LogseqGraphs',
+      'LogseqSwitchGraph',
       'LogseqGraph',
       'LogseqTodos',
       'LogseqTodosView',

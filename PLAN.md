@@ -234,7 +234,7 @@ Chosen because `plenary.nvim` is already installed — zero new dependencies.
 - **Decisions (locked):**
   - Graphs are **auto-discovered** by scanning configured parent dirs
     (no explicit name→path list to maintain).
-  - Switching UX is a **picker**: `:LogseqGraphs` (Telescope + `vim.ui.select`
+  - Switching UX is a **picker**: `:LogseqSwitchGraph` (Telescope + `vim.ui.select`
     fallback, reusing `telescope.pick`).
   - **Buffer wins**: when the current buffer sits inside a graph, that graph
     is used regardless of the active selection.
@@ -263,7 +263,7 @@ Chosen because `plenary.nvim` is already installed — zero new dependencies.
     `set_active()` / `get_active()` / `clear_active()` + state file)
   - `lua/logseq/init.lua` (`switch_graph()`; `find_files` picker title shows
     the graph name so scope is visible)
-  - `plugin/logseq.lua` (`:LogseqGraphs`, idempotent like the rest)
+  - `plugin/logseq.lua` (`:LogseqSwitchGraph`, idempotent like the rest)
   - `lua/logseq/health.lua` (discovered count + names, active graph + source,
     stale-state-file warning)
   - `doc/logseq.txt`, `README.md` (setup, switching, resolution table,
@@ -292,7 +292,7 @@ Chosen because `plenary.nvim` is already installed — zero new dependencies.
       active, so an override is always listed and clearable); `telescope.pick`
       with `(auto)` entry that clears the override; on choice → set, persist,
       `INFO` notify; empty discovery → `WARN` hinting at `graphs_dirs`
-    - [x] `:LogseqGraphs` command (double-`:source` safe)
+    - [x] `:LogseqSwitchGraph` command (double-`:source` safe)
     - [x] `follow_link` / `today` / `new_page` need no logic changes
       (all funnel through `resolve_root`) — covered by order-matrix specs
   - M5.4 — Health + docs + verify
@@ -303,9 +303,9 @@ Chosen because `plenary.nvim` is already installed — zero new dependencies.
       (already buffer-anchored)
 - **Verify:** `make ci` green (60 existing + new specs: discovery fixtures,
   `find_root` order matrix, active round-trip incl. simulated restart, stale
-  path ignored, `switch_graph` via stubbed `vim.ui.select`, `:LogseqGraphs`
+  path ignored, `switch_graph` via stubbed `vim.ui.select`, `:LogseqSwitchGraph`
   idempotency); `stylua --check` clean; manual: two real graphs,
-  `:LogseqGraphs` switches picker scope and `:LogseqToday` target,
+  `:LogseqSwitchGraph` switches picker scope and `:LogseqToday` target,
   buffer-in-other-graph overrides active, choice survives `:restart`.
 
 ### M7 — TODO view (dual picker + scratch buffer)
