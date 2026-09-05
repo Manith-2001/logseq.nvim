@@ -65,8 +65,8 @@ if complete_ok then
   if cur == '' or cur == 'htmlcomplete#CompleteTags' then
     vim.bo[buf].omnifunc = "v:lua.require'logseq.complete'.omnifunc"
   end
-  -- Buffer-scoped autocmds die with the buffer; the group check keeps a
-  -- ftplugin re-source from stacking duplicate watchers.
+  -- Buffer-scoped autocmds die with the buffer; the per-event group
+  -- checks keep a ftplugin re-source from stacking duplicate watchers.
   local grp = vim.api.nvim_create_augroup('LogseqComplete', { clear = false })
   if #vim.api.nvim_get_autocmds({ group = grp, buffer = buf, event = 'InsertCharPre' }) == 0 then
     vim.api.nvim_create_autocmd('InsertCharPre', {
@@ -90,6 +90,24 @@ if complete_ok then
         end
         vim.schedule(function()
           require('logseq.complete').auto_popup()
+        end)
+      end,
+    })
+  end
+  -- Live narrowing (M10.6): while the menu is up, every keystroke
+  -- re-ranks through the shared core and swaps the list in place, so
+  -- typing `theme` leaves only case-insensitive matches instead of the
+  -- builtin popup's own filtering. Deliberately NOT gated on
+  -- completion_auto — a manually opened menu must narrow too — and
+  -- loop-safe via the unchanged-state guard in complete.refresh().
+  if #vim.api.nvim_get_autocmds({ group = grp, buffer = buf, event = 'CompleteChanged' }) == 0 then
+    vim.api.nvim_create_autocmd('CompleteChanged', {
+      group = grp,
+      buffer = buf,
+      desc = 'Logseq: live-narrow [[ ]] completion',
+      callback = function()
+        vim.schedule(function()
+          require('logseq.complete').refresh()
         end)
       end,
     })

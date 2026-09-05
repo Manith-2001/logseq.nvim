@@ -165,6 +165,40 @@ describe('after/ftplugin/markdown.lua completion wiring (M10.2)', function()
     assert.are.equal(1, #watchers(buf))
   end)
 
+  it('registers one CompleteChanged narrow watcher, even when re-sourced', function()
+    edit(fixture .. '/pages/A.md')
+    local buf = vim.api.nvim_get_current_buf()
+    vim.cmd('runtime after/ftplugin/markdown.lua')
+    vim.cmd('runtime after/ftplugin/markdown.lua')
+    local narrowed = vim.api.nvim_get_autocmds({
+      group = 'LogseqComplete',
+      buffer = buf,
+      event = 'CompleteChanged',
+    })
+    assert.are.equal(1, #narrowed)
+  end)
+
+  it('narrows without the completion_auto gate', function()
+    edit(fixture .. '/pages/A.md')
+    local buf = vim.api.nvim_get_current_buf()
+    vim.cmd('runtime after/ftplugin/markdown.lua')
+    local fire = vim.api.nvim_get_autocmds({
+      group = 'LogseqComplete',
+      buffer = buf,
+      event = 'CompleteChanged',
+    })[1].callback
+    local orig_schedule = vim.schedule
+    local scheduled = 0
+    vim.schedule = function(_)
+      scheduled = scheduled + 1
+    end
+    -- A manually opened menu (auto off) must still narrow while typing.
+    config.setup({ completion_auto = false })
+    fire()
+    assert.are.equal(1, scheduled)
+    vim.schedule = orig_schedule
+  end)
+
   it('keeps the popup advisory-only via buffer-local completeopt', function()
     -- M10.5: stock completeopt pre-selects the first item AND writes it
     -- into the buffer on open; with auto-popup that re-inserted the top

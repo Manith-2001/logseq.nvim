@@ -155,7 +155,10 @@ page completion: existing pages/journals first (`● page` /
 `● journal`), dangling refs after (`○ new` — accepting one only
 inserts the title; no file is created). Ranking is prefix, then
 substring, then fuzzy, alphabetical within each tier; an empty `[[`
-offers everything (up to `completion_limit`). Manual completion always
+offers everything (up to `completion_limit`). The menu narrows live
+as you type — case-insensitive, so lowercase `theme` leaves only
+`Theme`-like titles — and dismisses itself when the brackets close or
+nothing matches. Manual completion always
 works with `<C-x><C-o>`; set `completion_auto = false` to keep only
 the manual trigger. The menu takes over `omnifunc` unless you set your
 own (only a stock `htmlcomplete` value is replaced). The ftplugin also

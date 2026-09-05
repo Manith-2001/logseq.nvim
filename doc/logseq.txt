@@ -335,7 +335,10 @@ existing pages/journals first (`● page` / `● journal`), dangling refs
 after (`○ new` — accepting one only inserts the title; no file is
 created). Ranking is prefix, then substring, then fuzzy-subsequence,
 alphabetical within each tier; an empty `[[` offers everything (up to
-|logseq-config| `completion_limit`). Manual completion always works
+|logseq-config| `completion_limit`). The menu narrows live as you
+type — case-insensitive, so lowercase `theme` leaves only
+`Theme`-like titles — and dismisses itself when the brackets close or
+nothing matches. Manual completion always works
 with `CTRL-X CTRL-O` (|i_CTRL-X_CTRL-O|); `completion_auto = false`
 keeps only the manual trigger. The menu takes over `omnifunc` unless
 you set your own (only a stock `htmlcomplete` value is replaced). The

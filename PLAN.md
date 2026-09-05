@@ -726,6 +726,20 @@ Chosen because `plenary.nvim` is already installed — zero new dependencies.
       menu back open
     - [x] Regression specs (advisory-only flags, `]]` in peace);
       README + `doc/logseq.txt` corrected (no longer "untouched")
+  - M10.6 — live narrowing (reported: lowercase `theme` highlighted
+    but never filtered; only capitalized `Theme` narrowed)
+    - [x] Root cause: the core ranked once at open; further typing
+      only ran the builtin popup's own (case-sensitive) filter.
+      Fix: buffer-local `CompleteChanged` watcher re-ranks through
+      the shared core per keystroke and swaps the menu in place via
+      `complete.refresh()` (case-insensitive prefix > substring >
+      fuzzy); `<C-e>` dismiss when the context closes or nothing
+      matches; loop-safe via an unchanged line+cursor guard
+    - [x] Deliberately NOT gated on `completion_auto` (manually
+      opened menus narrow too); no new cache — `list_pages()` is two
+      dir scans, cheap per keystroke
+    - [x] Specs (replace / dismiss / loop-guard / no-gate) + wiring
+      specs; README + `doc/logseq.txt` note the live narrowing
 - **Verify:** `make ci` green (existing + ~25 new specs); manual per
   M10.4 on a scratch graph; real graphs untouched (reads only —
   accepting a completion writes text into the buffer, never a file).

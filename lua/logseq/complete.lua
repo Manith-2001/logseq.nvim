@@ -352,6 +352,20 @@ local function feed_omni()
   vim.api.nvim_feedkeys(keys, 'n', false)
 end
 
+--- Dismiss a visible popup without touching the text (<C-e> aborts
+--- completion and keeps the typed prefix, so closing `]]` never eats
+--- input). Only called with a visible popup; the mode is checked by
+--- the caller.
+local function feed_abort()
+  local keys = vim.api.nvim_replace_termcodes('<C-e>', true, false, true)
+  vim.api.nvim_feedkeys(keys, 'n', false)
+end
+
+--- Last live-refresh state, to tell our own menu replace apart from
+--- user input (the CompleteChanged wiring fires for both).
+---@type table|string|nil
+M._last_refresh = nil
+
 --- Fire one auto-popup when the cursor sits in an open `[[` / `#[[` /
 --- `#` context (the InsertCharPre wiring + completion_auto gate live in
 --- after/ftplugin/markdown.lua). Guards: a visible popup, non-insert
@@ -375,6 +389,58 @@ function M.auto_popup(trigger)
   end
   local fire = trigger or feed_omni
   fire()
+  return true
+end
+
+--- Live-narrow the visible popup through the shared core (the
+--- CompleteChanged wiring in after/ftplugin/markdown.lua calls this
+--- once per keystroke while the menu is up). Replaces the menu in
+--- place via complete() — so the list is always our case-insensitive
+--- prefix > substring > fuzzy ranking, never the builtin popup's own
+--- (case-sensitive) filtering — and dismisses with <C-e> when the
+--- context closed or nothing matches. NOT gated on completion_auto: a
+--- manually opened menu must narrow while typing too.
+--- Loop-safe: our own replace/dismiss fires CompleteChanged again,
+--- but the buffer line and cursor are unchanged then, so the refresh
+--- declines. Guards: no popup, non-insert mode, and unchanged state
+--- all decline.
+---@return boolean true when the popup was replaced or dismissed
+function M.refresh()
+  if vim.fn.pumvisible() == 0 then
+    return false
+  end
+  if vim.fn.mode() ~= 'i' then
+    return false
+  end
+  local line, col = cursor_context()
+  if line == nil or col == nil then
+    return false
+  end
+  local key = { buf = vim.api.nvim_get_current_buf(), line = line, col = col }
+  local last = M._last_refresh
+  if
+    type(last) == 'table'
+    and last.buf == key.buf
+    and last.line == key.line
+    and last.col == key.col
+  then
+    return false
+  end
+  M._last_refresh = key
+  local match = M.find_start(line, col)
+  local items = {}
+  if match ~= nil then
+    items = M.complete(match.prefix, { limit = config.get().completion_limit })
+  end
+  if #items == 0 then
+    feed_abort()
+    return true
+  end
+  local words = {}
+  for _, item in ipairs(items) do
+    table.insert(words, { word = item.title, menu = M.menu(item) })
+  end
+  vim.fn.complete(match.startcol, words)
   return true
 end
 

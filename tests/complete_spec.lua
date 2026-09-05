@@ -376,3 +376,131 @@ describe('complete.auto_popup (M10.2)', function()
     assert.are.equal(0, fired)
   end)
 end)
+
+describe('complete.refresh (M10.6)', function()
+  local config = require('logseq.config')
+  local prev_buf, saved_g
+  local orig_mode, orig_pumvisible, orig_complete, orig_feedkeys
+  local scratch, dirs
+  local completed, fed
+  before_each(function()
+    prev_buf = vim.api.nvim_get_current_buf()
+    saved_g = vim.g.logseq
+    vim.g.logseq = nil
+    config._reset()
+    scratch, dirs = {}, {}
+    completed, fed = nil, {}
+    orig_mode, orig_pumvisible = vim.fn.mode, vim.fn.pumvisible
+    orig_complete, orig_feedkeys = vim.fn.complete, vim.api.nvim_feedkeys
+    vim.fn.mode = function()
+      return 'i'
+    end
+    vim.fn.pumvisible = function()
+      return 1
+    end
+    vim.fn.complete = function(col, items)
+      completed = { col = col, items = items }
+    end
+    vim.api.nvim_feedkeys = function(keys, _, _)
+      table.insert(fed, keys)
+    end
+    complete._last_refresh = nil
+  end)
+  after_each(function()
+    vim.fn.mode, vim.fn.pumvisible = orig_mode, orig_pumvisible
+    vim.fn.complete = orig_complete
+    vim.api.nvim_feedkeys = orig_feedkeys
+    complete._last_refresh = nil
+    pcall(vim.api.nvim_set_current_buf, prev_buf)
+    for _, b in ipairs(scratch) do
+      pcall(vim.api.nvim_buf_delete, b, { force = true })
+    end
+    for _, d in ipairs(dirs) do
+      vim.fn.delete(d, 'rf')
+    end
+    vim.g.logseq = saved_g
+    config._reset()
+  end)
+
+  -- Temp graph with a Theme / Theme Song / Bathe Me / Zebra spread, the
+  -- first page open with `line` as its only line and the cursor at EOL.
+  local function theme_buf(line)
+    local root = vim.fn.tempname()
+    table.insert(dirs, root)
+    vim.fn.mkdir(root .. '/pages', 'p')
+    vim.fn.mkdir(root .. '/journals', 'p')
+    for _, title in ipairs({ 'Theme', 'Theme Song', 'Bathe Me', 'Zebra' }) do
+      vim.fn.writefile({ '- nothing linked here' }, root .. '/pages/' .. title .. '.md')
+    end
+    vim.cmd('edit ' .. vim.fn.fnameescape(root .. '/pages/Theme.md'))
+    table.insert(scratch, vim.api.nvim_get_current_buf())
+    vim.api.nvim_buf_set_lines(0, 0, -1, false, { line })
+    vim.api.nvim_win_set_cursor(0, { 1, #line })
+  end
+
+  local function words()
+    local out = {}
+    for _, item in ipairs(completed.items) do
+      table.insert(out, item.word)
+    end
+    return out
+  end
+
+  it('declines with no popup or outside insert mode', function()
+    theme_buf('[[theme')
+    vim.fn.pumvisible = function()
+      return 0
+    end
+    assert.is_false(complete.refresh())
+    vim.fn.pumvisible = function()
+      return 1
+    end
+    vim.fn.mode = function()
+      return 'n'
+    end
+    assert.is_false(complete.refresh())
+    assert.is_nil(completed)
+    assert.are.same({}, fed)
+  end)
+
+  it('replaces the menu with the narrowed case-insensitive list', function()
+    theme_buf('[[theme') -- lowercase: the builtin filter would not narrow
+    assert.is_true(complete.refresh())
+    assert.are.equal(3, completed.col) -- 1-based prefix col, after `[[`
+    assert.are.same({ 'Theme', 'Theme Song', 'Bathe Me' }, words())
+    for _, item in ipairs(completed.items) do
+      assert.are.equal('● page', item.menu)
+    end
+    assert.are.same({}, fed) -- replaced, never dismissed
+  end)
+
+  it('dismisses when nothing matches', function()
+    theme_buf('[[zxq')
+    assert.is_true(complete.refresh())
+    assert.is_nil(completed)
+    assert.are.equal(1, #fed) -- one <C-e> abort, text untouched
+  end)
+
+  it('dismisses once the brackets close', function()
+    theme_buf('[[Theme]]')
+    assert.is_true(complete.refresh())
+    assert.is_nil(completed)
+    assert.are.equal(1, #fed)
+  end)
+
+  it('ignores its own replace instead of looping', function()
+    theme_buf('[[theme')
+    assert.is_true(complete.refresh())
+    completed, fed = nil, {}
+    assert.is_false(complete.refresh()) -- same line+cursor: no work
+    assert.is_nil(completed)
+    assert.are.same({}, fed)
+  end)
+
+  it('narrows manually opened menus too (no completion_auto gate)', function()
+    config.setup({ completion_auto = false })
+    theme_buf('[[theme')
+    assert.is_true(complete.refresh())
+    assert.are.same({ 'Theme', 'Theme Song', 'Bathe Me' }, words())
+  end)
+end)
