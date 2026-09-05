@@ -47,4 +47,16 @@ describe('config lazy vim.g.logseq merge (M1 bugfix)', function()
     vim.g.logseq = { graph_path = fixture }
     assert.are.equal(fixture, graph.find_root('/tmp'))
   end)
+
+  it('defaults graphs_dirs to {} and graphs_depth to 2 (M5.1)', function()
+    local cfg = config.get()
+    assert.are.same({}, cfg.graphs_dirs)
+    assert.are.equal(2, cfg.graphs_depth)
+  end)
+
+  it('graphs_dirs replaces wholesale across layers, no index merge (M5.1)', function()
+    vim.g.logseq = { graphs_dirs = { 'a', 'b' } }
+    config.setup({ graphs_dirs = { 'c' } })
+    assert.are.same({ 'c' }, config.get().graphs_dirs)
+  end)
 end)

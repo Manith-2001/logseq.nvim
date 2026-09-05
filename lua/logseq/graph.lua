@@ -14,6 +14,10 @@ local M = {}
 ---@field path string absolute file path
 ---@field kind string 'page' | 'journal'
 
+---@class LogseqKnownGraph
+---@field name string basename of the root dir (display only; matched by path)
+---@field path string absolute root path
+
 --- Normalize to an absolute path without trailing slash. Expands `~`
 --- so the documented `graph_path = '~/dev/notes_logseq'` style works.
 ---@param dir string
@@ -136,6 +140,65 @@ function M.list_pages(root, opts)
     return a.title < b.title
   end)
   return items
+end
+
+--- Scan cfg.graphs_dirs for graph roots (M5.1, multi-graph discovery).
+--- Depth-limited downward walk: each scan dir is level 0, its children
+--- level 1, up to cfg.graphs_depth. A dir matching is_root()
+--- (logseq/config.edn, or pages/ + journals/ siblings) is recorded and
+--- NOT descended into (a graph nested inside another resolves to the
+--- outer one). Hidden (dot-) dirs are skipped, symlinks are not followed,
+--- and missing scan dirs scan as empty — never an error.
+--- On-demand only: called by the switch picker and health, never at startup.
+---@return LogseqKnownGraph[] sorted by name, then path
+function M.discover_graphs()
+  local cfg = config.get()
+  local dirs = cfg.graphs_dirs
+  if type(dirs) ~= 'table' then
+    dirs = {}
+  end
+  local maxdepth = cfg.graphs_depth
+  if type(maxdepth) ~= 'number' or maxdepth < 0 then
+    maxdepth = 2
+  else
+    maxdepth = math.floor(maxdepth)
+  end
+  local found = {}
+  local seen = {}
+  local function record(dir)
+    if not seen[dir] then
+      seen[dir] = true
+      table.insert(found, { name = vim.fn.fnamemodify(dir, ':t'), path = dir })
+    end
+  end
+  local function scan(dir, level)
+    if is_root(dir, cfg.pages_dir, cfg.journals_dir) then
+      record(dir)
+      return
+    end
+    if level >= maxdepth or vim.fn.isdirectory(dir) == 0 then
+      return
+    end
+    for name, ftype in vim.fs.dir(dir) do
+      -- NB: vim.fs.dir yields libuv dirent types ('directory', not 'dir').
+      -- 'link' is deliberately excluded: symlinks are not followed.
+      if ftype == 'directory' and name:sub(1, 1) ~= '.' then
+        scan(dir .. '/' .. name, level + 1)
+      end
+    end
+  end
+  for _, dir in ipairs(dirs) do
+    if type(dir) == 'string' and dir ~= '' then
+      scan(normalize(dir), 0)
+    end
+  end
+  table.sort(found, function(a, b)
+    if a.name ~= b.name then
+      return a.name < b.name
+    end
+    return a.path < b.path
+  end)
+  return found
 end
 
 return M

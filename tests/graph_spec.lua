@@ -137,3 +137,102 @@ describe('graph.find_root_from (M3)', function()
     assert.is_nil(graph.find_root_from(''))
   end)
 end)
+
+describe('graph.discover_graphs (M5.1)', function()
+  local saved_g
+  local tmps
+  before_each(function()
+    saved_g = vim.g.logseq
+    vim.g.logseq = nil
+    config._reset()
+    tmps = {}
+  end)
+  after_each(function()
+    for _, t in ipairs(tmps) do
+      vim.fn.delete(t, 'rf')
+    end
+    vim.g.logseq = saved_g
+    config._reset()
+  end)
+
+  local function track(tmp)
+    table.insert(tmps, tmp)
+    return tmp
+  end
+
+  local function mkpages(root)
+    vim.fn.mkdir(root .. '/pages', 'p')
+    vim.fn.mkdir(root .. '/journals', 'p')
+    vim.fn.writefile({ '- x' }, root .. '/pages/A.md')
+  end
+
+  local function mkedn(root)
+    vim.fn.mkdir(root .. '/logseq', 'p')
+    vim.fn.writefile({ '{:x 1}' }, root .. '/logseq/config.edn')
+  end
+
+  it('finds roots via both markers, skips non-roots, sorts by name', function()
+    local tmp = track(vim.fn.tempname())
+    mkpages(tmp .. '/zeta') -- created first, sorts last
+    mkedn(tmp .. '/alpha')
+    vim.fn.mkdir(tmp .. '/plain/pages', 'p') -- pages/ alone is not a root
+    config.setup({ graphs_dirs = { tmp }, graphs_depth = 2 })
+    assert.are.same({
+      { name = 'alpha', path = tmp .. '/alpha' },
+      { name = 'zeta', path = tmp .. '/zeta' },
+    }, graph.discover_graphs())
+  end)
+
+  it('respects graphs_depth', function()
+    local tmp = track(vim.fn.tempname())
+    mkpages(tmp .. '/shallow') -- level 1
+    mkpages(tmp .. '/mid/deep') -- level 2
+    config.setup({ graphs_dirs = { tmp }, graphs_depth = 1 })
+    assert.are.same({
+      { name = 'shallow', path = tmp .. '/shallow' },
+    }, graph.discover_graphs())
+  end)
+
+  it('checks the scan dir itself (level 0)', function()
+    local tmp = track(vim.fn.tempname())
+    mkpages(tmp)
+    config.setup({ graphs_dirs = { tmp }, graphs_depth = 0 })
+    assert.are.same({
+      { name = vim.fn.fnamemodify(tmp, ':t'), path = tmp },
+    }, graph.discover_graphs())
+  end)
+
+  it('skips hidden dirs and does not descend into found roots', function()
+    local tmp = track(vim.fn.tempname())
+    mkpages(tmp .. '/.hiddenroot')
+    mkpages(tmp .. '/outer')
+    mkpages(tmp .. '/outer/inner') -- nested root prunes to the outer graph
+    config.setup({ graphs_dirs = { tmp }, graphs_depth = 3 })
+    assert.are.same({
+      { name = 'outer', path = tmp .. '/outer' },
+    }, graph.discover_graphs())
+  end)
+
+  it('keeps same-basename graphs distinct and dedupes scan dirs', function()
+    local tmp1 = track(vim.fn.tempname())
+    local tmp2 = track(vim.fn.tempname())
+    mkpages(tmp1 .. '/dup')
+    mkpages(tmp2 .. '/dup')
+    config.setup({ graphs_dirs = { tmp2, tmp1, tmp1 }, graphs_depth = 1 })
+    local found = graph.discover_graphs()
+    assert.are.equal(2, #found)
+    assert.are.equal('dup', found[1].name)
+    assert.are.equal('dup', found[2].name)
+    local paths = { found[1].path, found[2].path }
+    table.sort(paths)
+    local expected = { tmp1 .. '/dup', tmp2 .. '/dup' }
+    table.sort(expected)
+    assert.are.same(expected, paths)
+  end)
+
+  it('returns {} for empty, missing, or invalid scan config', function()
+    assert.are.same({}, graph.discover_graphs()) -- defaults: graphs_dirs = {}
+    config.setup({ graphs_dirs = { '/tmp/no-such-logseq-graph-xyz', '', 42 } })
+    assert.are.same({}, graph.discover_graphs())
+  end)
+end)

@@ -4,6 +4,8 @@
 ---@field journals_dir string default 'journals'
 ---@field journal_format string os.date format, default '%Y_%m_%d'
 ---@field picker string 'telescope' (with vim.ui.select fallback)
+---@field graphs_dirs string[] parent dirs scanned for graphs (M5, default {})
+---@field graphs_depth integer max levels below each scan dir (M5, default 2)
 
 local M = {}
 
@@ -14,6 +16,8 @@ local defaults = {
   journals_dir = 'journals',
   journal_format = '%Y_%m_%d',
   picker = 'telescope',
+  graphs_dirs = {},
+  graphs_depth = 2,
 }
 
 --- Explicit opts from setup() calls (highest precedence layer).
@@ -33,6 +37,8 @@ local known_keys = {
   journals_dir = true,
   journal_format = true,
   picker = true,
+  graphs_dirs = true,
+  graphs_depth = true,
 }
 
 local function warn_unknown(opts)
@@ -61,6 +67,8 @@ function M.setup(opts)
     journals_dir = { current.journals_dir, 'string' },
     journal_format = { current.journal_format, 'string' },
     picker = { current.picker, 'string' },
+    graphs_dirs = { current.graphs_dirs, 'table' },
+    graphs_depth = { current.graphs_depth, 'number' },
   })
   return current
 end
@@ -75,7 +83,16 @@ function M.get()
   if type(g) == 'table' then
     merged = vim.tbl_deep_extend('force', merged, g)
   end
-  return vim.tbl_deep_extend('force', merged, explicit_opts)
+  merged = vim.tbl_deep_extend('force', merged, explicit_opts)
+  -- List values replace wholesale: tbl_deep_extend merges arrays index-wise
+  -- ({'a','b'} + {'c'} -> {'c','b'}), which is never the intent. The highest
+  -- layer defining the key wins outright.
+  if explicit_opts.graphs_dirs ~= nil then
+    merged.graphs_dirs = vim.deepcopy(explicit_opts.graphs_dirs)
+  elseif type(g) == 'table' and g.graphs_dirs ~= nil then
+    merged.graphs_dirs = vim.deepcopy(g.graphs_dirs)
+  end
+  return merged
 end
 
 --- Unknown keys accumulated for health.lua to report (not a hard error).
