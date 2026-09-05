@@ -606,4 +606,24 @@ function M.nav_link(direction)
   end
 end
 
+--- Open the global graph overview (M6.3): every page/journal/dangling
+--- ref with per-entry link counts in a scratch `filetype=logseq-graph`
+--- buffer. `<CR>`/`gf` jumps to the entry's page, `P` picks a page for
+--- the local explorer, `T` toggles dangling, `r` refreshes, `q` closes.
+--- Same root resolution and graph_max_files guard as graph_view.
+--- opts.root overrides root resolution (used by tests).
+---@param opts table|nil ({root=}; no command args: :LogseqGraphAll takes none)
+---@return integer|nil explorer bufnr, or nil when aborted
+function M.graph_view_all(opts)
+  opts = opts or {}
+  local root = resolve_root(opts)
+  if not root then
+    return nil
+  end
+  if not guard_size(root) then
+    return nil
+  end
+  return require('logseq.view').open_all({ root = root })
+end
+
 return M
