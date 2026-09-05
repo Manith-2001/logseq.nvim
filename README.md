@@ -47,6 +47,7 @@ Then `:helptags ALL` (once, so `:help logseq` works) and `:checkhealth logseq`.
 | `:LogseqNew [title]` | Open a page; prompts for the title when omitted           |
 | `:LogseqGraphs`      | Pick the active graph (multi-graph switching, see below)  |
 | `:LogseqGraph [title]` | Explore a page's links (Linked + Backlinks) in a scratch buffer |
+| `:LogseqGraphAll` | Overview of the whole graph (counts + picker to any page's local view) |
 
 Only `<Plug>(LogseqFollow)` is provided — no keys are bound by default.
 Suggested opt-in bind:
@@ -57,7 +58,8 @@ vim.keymap.set('n', 'gf', '<Plug>(LogseqFollow)')
 
 Lua API mirrors the commands: `require('logseq').find_files()`,
 `.follow_link()`, `.today()`, `.new_page(title)`, `.switch_graph()`,
-`.graph_view(opts)` (`{title=, depth=1|2, root=}`).
+`.graph_view(opts)` (`{title=, depth=1|2, root=}`), `.graph_view_all(opts)`
+(`{root=}`).
 
 ## Configuration
 
@@ -80,6 +82,13 @@ The explorer centers on the given title, the current `pages/*` /
 `○` = dangling (opens lazily, nothing written until content + `:w`).
 Buffer keys: `<CR>` / `gf` open the entry, `q` closes, `r` refreshes,
 `1` / `2` set depth, `T` toggles dangling entries.
+
+`:LogseqGraphAll` renders the whole graph instead: a stats header plus
+`Pages` / `Journals` / `Dangling` sections with per-entry link counts
+(`● A →1 ←1` = one out-link, one backlink; `○` dangling shows
+backlinks only), so hubs, orphans, and dangling refs are visible at a
+glance. Same keys, except `1` / `2` are replaced by `P`, which picks a
+page (Telescope, `vim.ui.select` fallback) and opens its local view.
 
 Unknown keys are not errors; `:checkhealth logseq` reports them.
 

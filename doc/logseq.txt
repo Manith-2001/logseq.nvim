@@ -69,6 +69,8 @@ After install, run `:helptags ALL` once so this help is indexed, then
   |logseq-multigraph|).
 - `:LogseqGraph [title]`  explore a page's links (Linked + Backlinks)
   in a scratch buffer (see |logseq-graphview|).
+- `:LogseqGraphAll` ..... overview of the whole graph with per-entry
+  link counts, plus a picker to any page's local view (same section).
 
 Markdown buffers inside a graph get buffer-local treatment only
 (`b:logseq_root` is set, hard tabs are kept literal for Logseq-style
@@ -117,6 +119,17 @@ unless you map them (see |logseq-mappings|).
     toggles dangling entries. The index builds synchronously and
     refuses graphs over |logseq-config| `graph_max_files` with a
     warning. See |logseq-graphview|.
+
+                                                         *:LogseqGraphAll*
+:LogseqGraphAll
+    Overview of the whole graph in a scratch `filetype=logseq-graph`
+    buffer: a stats header (`N pages · M journals · …`) plus `Pages` /
+    `Journals` / `Dangling` sections with per-entry link counts
+    (`● A →1 ←1` = one out-link, one backlink; `○` dangling entries
+    show backlinks only). Same keys as |:LogseqGraph|, except depth
+    has no meaning here: `1` / `2` are replaced by `P`, which picks a
+    page (Telescope, |vim.ui.select| fallback) and opens its local
+    view. Same root resolution and `graph_max_files` guard.
 
 ==============================================================================
 6. MAPPINGS                                          *logseq-mappings*
@@ -231,5 +244,11 @@ instead of stalling. Namespace targets (`[[a/b]]`) are skipped by the
 index, matching the facade's out-of-scope refusal (see
 |logseq-semantics|); self-loops list under Linked but never as their
 own backlink.
+
+`:LogseqGraphAll` renders the same index globally: stats header plus
+`Pages` / `Journals` / `Dangling` sections (`:LogseqGraphAll`), with
+per-entry `→out ←back` counts so hubs, orphans (`→0 ←0`), and
+dangling refs stand out. `P` jumps from the overview to any page's
+local view through the standard picker.
 
   vim:tw=78:ts=8:ft=help:norl:
