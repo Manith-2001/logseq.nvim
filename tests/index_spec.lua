@@ -203,3 +203,110 @@ describe('index accessors (M6.1)', function()
     assert.are.same({ 'A', 'B', 'C' }, index.titles(idx))
   end)
 end)
+
+describe('index.occurrences (M8.1)', function()
+  local saved_g
+  local tmps
+  before_each(function()
+    saved_g = vim.g.logseq
+    vim.g.logseq = nil
+    config._reset()
+    tmps = {}
+  end)
+  after_each(function()
+    for _, t in ipairs(tmps) do
+      vim.fn.delete(t, 'rf')
+    end
+    vim.g.logseq = saved_g
+    config._reset()
+  end)
+
+  local function mkgraph(files)
+    local tmp = vim.fn.tempname()
+    table.insert(tmps, tmp)
+    vim.fn.mkdir(tmp .. '/pages', 'p')
+    vim.fn.mkdir(tmp .. '/journals', 'p')
+    for name, lines in pairs(files) do
+      vim.fn.writefile(lines, tmp .. '/pages/' .. name .. '.md')
+    end
+    return tmp
+  end
+
+  it('records one row per occurrence on the fixture graph', function()
+    local idx = index.build(fixture)
+    assert.are.same({
+      { src = 'A', dst = 'World', lnum = 1, line = '- Hello [[World]]' },
+    }, index.occurrences(idx, 'World'))
+    assert.are.same({
+      { src = 'B', dst = 'A', lnum = 1, line = '- Ref to [[A]]' },
+    }, index.occurrences(idx, 'A'))
+    assert.are.same({}, index.occurrences(idx, 'B'))
+    assert.are.same({}, index.occurrences(idx, 'Nope'))
+  end)
+
+  it('keeps multiple rows for repeat links without deduping', function()
+    local root = mkgraph({ A = { '- [[B]] and [[B]]', '- second [[B]]' }, B = { '- lone' } })
+    local idx = index.build(root)
+    -- forward dedupes to one edge, but occurrences keep all three rows.
+    assert.are.same({ 'B' }, idx.forward['A'])
+    assert.are.equal(1, idx.stats.edges)
+    assert.are.same({
+      { src = 'A', dst = 'B', lnum = 1, line = '- [[B]] and [[B]]' },
+      { src = 'A', dst = 'B', lnum = 1, line = '- [[B]] and [[B]]' },
+      { src = 'A', dst = 'B', lnum = 2, line = '- second [[B]]' },
+    }, index.occurrences(idx, 'B'))
+  end)
+
+  it('sorts by (src, lnum)', function()
+    local root = mkgraph({
+      A = { '- lone', '- late [[T]]' },
+      B = { '- early [[T]]', '- later [[T]]' },
+    })
+    local idx = index.build(root)
+    local got = index.occurrences(idx, 'T')
+    local keys = {}
+    for _, occ in ipairs(got) do
+      table.insert(keys, occ.src .. ':' .. occ.lnum)
+    end
+    assert.are.same({ 'A:2', 'B:1', 'B:2' }, keys)
+  end)
+
+  it('skips namespace and blank targets like forward[]', function()
+    local root = mkgraph({ A = { '- [[a/b]] and [[]] plus [[B]]' } })
+    local idx = index.build(root)
+    assert.are.same({ 'B' }, idx.forward['A'])
+    assert.are.same({
+      { src = 'A', dst = 'B', lnum = 1, line = '- [[a/b]] and [[]] plus [[B]]' },
+    }, index.occurrences(idx, 'B'))
+    assert.are.same({}, index.occurrences(idx, 'a/b'))
+    assert.is_nil(idx.nodes['a/b'])
+  end)
+
+  it('keeps self-loops in the stored list but excludes them from back-context', function()
+    local root = mkgraph({ A = { '- [[A]] and [[B]]' } })
+    local idx = index.build(root)
+    assert.are.same({ 'A', 'B' }, idx.forward['A'])
+    assert.are.same({}, idx.back['A'])
+    -- Stored list keeps the self-loop for forward-context; accessor mirrors back[].
+    assert.are.equal(2, #idx.occurrences)
+    assert.are.same({}, index.occurrences(idx, 'A'))
+    assert.are.same({
+      { src = 'A', dst = 'B', lnum = 1, line = '- [[A]] and [[B]]' },
+    }, index.occurrences(idx, 'B'))
+  end)
+
+  it('returns {} for unknown/non-string dst and copies rows', function()
+    local root = mkgraph({ A = { '- [[B]]' }, B = { '- lone' } })
+    local idx = index.build(root)
+    assert.are.same({}, index.occurrences(idx, 'Nope'))
+    assert.are.same({}, index.occurrences(idx, nil))
+    assert.are.same({}, index.occurrences(idx, 42))
+    local first = index.occurrences(idx, 'B')
+    first[1].src = 'MUT'
+    table.insert(first, { src = 'X', dst = 'B', lnum = 9, line = 'x' })
+    local again = index.occurrences(idx, 'B')
+    assert.are.same({
+      { src = 'A', dst = 'B', lnum = 1, line = '- [[B]]' },
+    }, again)
+  end)
+end)

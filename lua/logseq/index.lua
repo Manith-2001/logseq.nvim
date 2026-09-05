@@ -23,6 +23,13 @@ local M = {}
 ---@field back table<string, string[]> dst title -> sorted src titles
 ---@field nodes table<string, LogseqIndexNode> every known title
 ---@field stats table edge/node counts {pages, journals, dangling, edges}
+---@field occurrences LogseqOccurrence[] per-link rows, no dedup, sorted by (src, lnum)
+
+---@class LogseqOccurrence
+---@field src string source page title holding the link
+---@field dst string normalized link target title
+---@field lnum integer 1-based line number in the source file
+---@field line string raw source line text
 
 --- Trim surrounding whitespace like Logseq page names. Returns nil for
 --- non-string or blank input (blank links like `[[]]` are never edges).
@@ -68,6 +75,8 @@ function M.build(root, opts)
   local fwd_sets = {}
   ---@type table<string, LogseqIndexNode>
   local nodes = {}
+  ---@type LogseqOccurrence[]
+  local occurrences = {}
   local pages, journals = 0, 0
 
   for _, item in ipairs(items) do
@@ -82,11 +91,12 @@ function M.build(root, opts)
     if fwd_sets[item.title] == nil then
       fwd_sets[item.title] = {}
     end
-    for _, line in ipairs(read_lines(item.path)) do
+    for lnum, line in ipairs(read_lines(item.path)) do
       for _, link in ipairs(parser.links_in_line(line)) do
         local target = M.normalize(link.text)
         if target ~= nil and not is_namespace(target) then
           fwd_sets[item.title][target] = true
+          table.insert(occurrences, { src = item.title, dst = target, lnum = lnum, line = line })
         end
       end
     end
@@ -141,11 +151,25 @@ function M.build(root, opts)
     end
   end
 
+  table.sort(occurrences, function(a, b)
+    if a.src ~= b.src then
+      return a.src < b.src
+    end
+    if a.lnum ~= b.lnum then
+      return a.lnum < b.lnum
+    end
+    if a.dst ~= b.dst then
+      return a.dst < b.dst
+    end
+    return a.line < b.line
+  end)
+
   return {
     forward = forward,
     back = back,
     nodes = nodes,
     stats = { pages = pages, journals = journals, dangling = dangling, edges = edges },
+    occurrences = occurrences,
   }
 end
 
@@ -178,6 +202,38 @@ function M.back(index, title)
   for i, src in ipairs(srcs) do
     out[i] = src
   end
+  return out
+end
+
+--- Back-context occurrence rows for dst, sorted by (src, lnum).
+--- Self-loops (src == dst) are excluded, mirroring back[]. The stored
+--- list keeps them so a forward-context lookup still sees the edge;
+--- only this accessor filters. Blank/namespace targets never reach the
+--- stored list (same exclusion as forward[]). Unknown or non-string dst
+--- yields {}. Returns copies so callers cannot mutate the index.
+---@param index LogseqGraphIndex
+---@param dst string
+---@return LogseqOccurrence[]
+function M.occurrences(index, dst)
+  if type(dst) ~= 'string' then
+    return {}
+  end
+  local stored = index.occurrences
+  if type(stored) ~= 'table' then
+    return {}
+  end
+  local out = {}
+  for _, occ in ipairs(stored) do
+    if occ.dst == dst and occ.src ~= dst then
+      table.insert(out, { src = occ.src, dst = occ.dst, lnum = occ.lnum, line = occ.line })
+    end
+  end
+  table.sort(out, function(a, b)
+    if a.src ~= b.src then
+      return a.src < b.src
+    end
+    return a.lnum < b.lnum
+  end)
   return out
 end
 

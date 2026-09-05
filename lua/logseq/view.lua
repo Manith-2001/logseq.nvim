@@ -1,10 +1,13 @@
---- Graph explorer (M6.2 local, M6.3 global): scratch
+--- Graph explorer (M6.2 local, M6.3 global, M8.2 tree + context): scratch
 --- `filetype=logseq-graph` buffers rendering the M6.1 link index.
---- Local (`M.open`): one page's Linked/Backlinks. Global (`M.open_all`):
+--- Local (`M.open`): one page's Outgoing/Incoming tree. Global (`M.open_all`):
 --- every page/journal/dangling ref with per-entry link counts
 --- (`● A →1 ←1`, `○ World ←1`). `●` marks a target whose file exists,
 --- `○` a dangling ref (jump opens it lazily via page.open_lazy: nothing
---- is written until content + `:w`). Layout is pure data (M.lines,
+--- is written until content + `:w`). Local page rows use tree branches
+--- (`├─`/`└─`); Incoming rows carry capped block-context children
+--- (`"trimmed block" → Src:lnum`, overflow `more=N`) from the M8.1
+--- `index.occurrences`. Layout is pure data (M.lines,
 --- M.all_lines) so specs assert it without windows; M.open/render/jump
 --- add the buffer behavior on top. State lives in `b:logseq_graph`
 --- ({root=, kind='local'|'all', title= (local), depth= (local),
@@ -17,30 +20,89 @@ local MARK_EXISTS = '●'
 local MARK_DANGLING = '○'
 local PLACEHOLDER = '(none)'
 
---- Parse an entry line back to its title. Headers, blanks, and the
---- `(none)` placeholder yield nil. M6.3 count suffixes (` →N ←M` on
---- existing entries, ` ←M` on dangling ones) are stripped, so counted
---- global-view lines round-trip to their title. Pathological titles
---- that literally end in such a suffix misparse; only plugin-rendered
---- lines are ever parsed, and pages are never named that way.
+local BRANCH_MID = '├─ '
+local BRANCH_LAST = '└─ '
+local CHILD_MID = '│  '
+local CHILD_LAST = '   '
+
+--- Max block-text chars per context row (~80 cols, ellipsis-capped) and
+--- max context rows shown per neighbor pair (overflow becomes `more=N`).
+local CONTEXT_MAX_CHARS = 80
+local CONTEXT_PER_PAIR = 3
+
+--- Parse an entry line back to its title. Page rows (plain `● T` /
+--- `○ T` and tree `├─ ● T` / `└─ ○ T`) yield the neighbor title;
+--- context rows (`… "block" → Src:lnum`) yield the source title after
+--- the last `→`. Headers, blanks, `(none)`, and `more=N` overflow rows
+--- yield nil. M6.3 count suffixes (` →N ←M` on existing entries,
+--- ` ←M` on dangling ones) are stripped, so counted global-view lines
+--- round-trip to their title. Pathological titles that literally end in
+--- such a suffix misparse; only plugin-rendered lines are ever parsed,
+--- and pages are never named that way.
+--- Strip tree dressing (`├─`/`└─` branches plus `│  `/space child
+--- indents) so page and context rows parse like their plain forms.
+--- Byte-prefix compares: Lua pattern classes split multibyte box chars
+--- into bytes, so `[├└]` can never match — compare whole prefixes.
+---@param line string
+---@return string
+local function strip_tree(line)
+  local s = line
+  while true do
+    local t = s:gsub('^%s+', '', 1)
+    if t:sub(1, #CHILD_MID) == CHILD_MID then
+      s = t:sub(#CHILD_MID + 1)
+    elseif t:sub(1, #BRANCH_MID) == BRANCH_MID or t:sub(1, #BRANCH_LAST) == BRANCH_LAST then
+      return t:sub(#BRANCH_MID + 1)
+    else
+      return t
+    end
+  end
+end
+
 ---@param line string|nil
 ---@return string|nil
 function M.entry_title(line)
   if type(line) ~= 'string' then
     return nil
   end
-  local marker, rest = line:match('^(%S+)%s+(.*)$')
-  if marker ~= MARK_EXISTS and marker ~= MARK_DANGLING then
+  local rest = strip_tree(line)
+  local marker, title = rest:match('^(%S+)%s+(.*)$')
+  if marker == MARK_EXISTS or marker == MARK_DANGLING then
+    title = title:gsub('%s+→%d+%s+←%d+$', ''):gsub('%s+←%d+$', '')
+    if title == '' then
+      return nil
+    end
+    return title
+  end
+  title = line:match('.*→%s*(.+):(%d+)%s*$')
+  if title ~= nil then
+    title = title:match('^%s*(.-)%s*$')
+    if title ~= '' then
+      return title
+    end
+  end
+  return nil
+end
+
+--- Line number for context rows (`→ Src:lnum`), else nil. Page rows —
+--- even ones whose title happens to end in `:digits` — yield nil, so
+--- jump() only line-jumps from real context rows.
+---@param line string|nil
+---@return integer|nil
+function M.entry_lnum(line)
+  if type(line) ~= 'string' then
     return nil
   end
-  if rest == nil or rest == '' then
+  local rest = strip_tree(line)
+  local marker = rest:match('^(%S+)')
+  if marker == MARK_EXISTS or marker == MARK_DANGLING then
     return nil
   end
-  rest = rest:gsub('%s+→%d+%s+←%d+$', ''):gsub('%s+←%d+$', '')
-  if rest == '' then
-    return nil
+  local lnum = line:match('.*→%s*.+:(%d+)%s*$')
+  if lnum ~= nil then
+    return tonumber(lnum)
   end
-  return rest
+  return nil
 end
 
 ---@param idx LogseqGraphIndex
@@ -58,29 +120,106 @@ local function shown(idx, titles, show_dangling)
   return out
 end
 
+--- Trim surrounding whitespace; over-long blocks are capped at
+--- CONTEXT_MAX_CHARS chars with a trailing `…`.
+---@param line string
+---@return string
+local function short_block(line)
+  local s = line:match('^%s*(.-)%s*$') or ''
+  if vim.fn.strchars(s) > CONTEXT_MAX_CHARS then
+    s = vim.fn.strcharpart(s, 0, CONTEXT_MAX_CHARS - 1) .. '…'
+  end
+  return s
+end
+
+--- One context child row: `"block" → Src:lnum`.
+---@param occ LogseqOccurrence
+---@return string
+local function context_text(occ)
+  return ('"%s" → %s:%d'):format(short_block(occ.line), occ.src, occ.lnum)
+end
+
+---@param title string neighbor page title
+---@param exists boolean
+---@return string page row without the tree branch
+local function page_text(title, exists)
+  return (exists and MARK_EXISTS or MARK_DANGLING) .. ' ' .. title
+end
+
+--- Tree section of plain page rows (Outgoing, 2 hops): `├─`/`└─`
+--- branches with `●`/`○` marks, `(none)` when empty.
 ---@param out string[]
 ---@param heading string section heading without the count
 ---@param idx LogseqGraphIndex
 ---@param titles string[] already-sorted titles
 ---@param show_dangling boolean
-local function section(out, heading, idx, titles, show_dangling)
+local function tree_section(out, heading, idx, titles, show_dangling)
   local vis = shown(idx, titles, show_dangling)
   table.insert(out, ('%s (%d)'):format(heading, #vis))
   if #vis == 0 then
     table.insert(out, PLACEHOLDER)
     return
   end
-  for _, t in ipairs(vis) do
+  for i, t in ipairs(vis) do
     local node = idx.nodes[t]
     local exists = node ~= nil and node.exists
-    table.insert(out, (exists and MARK_EXISTS or MARK_DANGLING) .. ' ' .. t)
+    table.insert(out, (i == #vis and BRANCH_LAST or BRANCH_MID) .. page_text(t, exists))
   end
 end
 
---- Pure layout: header + Linked/Backlinks sections (+ `2 hops` at
---- depth 2, i.e. neighbors exactly two edges away). Unknown titles
---- render as empty sections, never an error (a dangling center page
---- still shows its backlinks when other pages link it).
+--- Incoming section: one tree row per backlink source plus, under each,
+--- its block-context rows (`"block" → Src:lnum`), capped at
+--- CONTEXT_PER_PAIR per pair with a `more=N` overflow row. Counts cover
+--- visible page rows only, never context children.
+---@param out string[]
+---@param heading string section heading without the count
+---@param idx LogseqGraphIndex
+---@param center string center page title
+---@param titles string[] already-sorted backlink sources
+---@param show_dangling boolean
+local function incoming_section(out, heading, idx, center, titles, show_dangling)
+  local vis = shown(idx, titles, show_dangling)
+  table.insert(out, ('%s (%d)'):format(heading, #vis))
+  if #vis == 0 then
+    table.insert(out, PLACEHOLDER)
+    return
+  end
+  local occs = index_mod.occurrences(idx, center)
+  for i, t in ipairs(vis) do
+    local last_parent = i == #vis
+    local node = idx.nodes[t]
+    local exists = node ~= nil and node.exists
+    table.insert(out, (last_parent and BRANCH_LAST or BRANCH_MID) .. page_text(t, exists))
+    local rows = {}
+    for _, occ in ipairs(occs) do
+      if occ.src == t then
+        table.insert(rows, occ)
+      end
+    end
+    local indent = last_parent and CHILD_LAST or CHILD_MID
+    local total = #rows
+    if total > 0 then
+      local show_n = math.min(total, CONTEXT_PER_PAIR)
+      for j = 1, show_n do
+        local last_child = j == show_n and total <= CONTEXT_PER_PAIR
+        table.insert(
+          out,
+          indent .. (last_child and BRANCH_LAST or BRANCH_MID) .. context_text(rows[j])
+        )
+      end
+      if total > CONTEXT_PER_PAIR then
+        table.insert(out, indent .. BRANCH_LAST .. ('more=%d'):format(total - CONTEXT_PER_PAIR))
+      end
+    end
+  end
+end
+
+--- Pure layout: header + Outgoing/Incoming tree sections (+ `2 hops` at
+--- depth 2, i.e. neighbors exactly two edges away). Incoming page rows
+--- carry their block-context children (`"block" → Src:lnum`, capped per
+--- pair with `more=N`); Outgoing and 2-hops rows are plain tree rows.
+--- Unknown titles render as empty sections, never an error (a dangling
+--- center page still shows its backlinks when other pages link it).
 ---@param idx LogseqGraphIndex
 ---@param title string center page title
 ---@param depth integer 1 or 2 (anything else clamps to 1)
@@ -96,9 +235,9 @@ function M.lines(idx, title, depth, opts)
   }
   local fwd = index_mod.forward(idx, title)
   local back = index_mod.back(idx, title)
-  section(out, '## Linked', idx, fwd, show_dangling)
+  tree_section(out, '## Outgoing', idx, fwd, show_dangling)
   table.insert(out, '')
-  section(out, '## Backlinks', idx, back, show_dangling)
+  incoming_section(out, '## Incoming', idx, title, back, show_dangling)
   if depth == 2 then
     local near = {}
     for _, t in ipairs(fwd) do
@@ -115,7 +254,7 @@ function M.lines(idx, title, depth, opts)
     end
     table.sort(hops)
     table.insert(out, '')
-    section(out, '## 2 hops', idx, hops, show_dangling)
+    tree_section(out, '## 2 hops', idx, hops, show_dangling)
   end
   return out
 end
@@ -421,8 +560,10 @@ function M.pick_page(buf)
 end
 
 --- Open the entry under the cursor: existing pages/journals via :edit,
---- dangling refs lazily (no file until content + `:w`). Stays put with
---- a warning when the cursor is not on an entry.
+--- dangling refs lazily (no file until content + `:w`). Context rows
+--- (`"block" → Src:lnum`) land on the exact source line; page rows keep
+--- today's behavior (top of file). Stays put with a warning when the
+--- cursor is not on an entry.
 ---@param buf integer|nil (default current buffer)
 ---@param lnum integer|nil (default cursor line)
 function M.jump(buf, lnum)
@@ -430,7 +571,8 @@ function M.jump(buf, lnum)
   local st = get_state(buf)
   assert(st ~= nil, 'view.jump: not a logseq-graph buffer')
   lnum = lnum or vim.api.nvim_win_get_cursor(0)[1]
-  local title = M.entry_title(vim.api.nvim_buf_get_lines(buf, lnum - 1, lnum, false)[1])
+  local cur = vim.api.nvim_buf_get_lines(buf, lnum - 1, lnum, false)[1]
+  local title = M.entry_title(cur)
   if title == nil then
     vim.notify('logseq.nvim: no graph entry under cursor', vim.log.levels.WARN)
     return
@@ -442,10 +584,16 @@ function M.jump(buf, lnum)
     )
     return
   end
+  local target_lnum = M.entry_lnum(cur)
   local idx = index_mod.build(st.root)
   local node = idx.nodes[title]
   if node ~= nil and node.exists and node.path ~= nil then
     vim.cmd('edit ' .. vim.fn.fnameescape(node.path))
+    if target_lnum ~= nil then
+      local count = vim.api.nvim_buf_line_count(0)
+      target_lnum = math.max(1, math.min(target_lnum, count))
+      pcall(vim.api.nvim_win_set_cursor, 0, { target_lnum, 0 })
+    end
     return
   end
   require('logseq.page').open_lazy(require('logseq.page').title_to_path(st.root, title))

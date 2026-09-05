@@ -309,9 +309,9 @@ describe('view.pick_page (M6.3)', function()
     end
     assert.are.same({ 'A', 'B' }, titles) -- sorted, dangling-free here
     assert.are.equal('● B →0 ←1', seen_opts.format_item(seen[2]))
-    -- Choice opened the local explorer for B (plain local entries there).
+    -- Choice opened the local explorer for B (tree rows there).
     assert.are.equal('logseq-graph', vim.bo[vim.api.nvim_get_current_buf()].filetype)
-    assert.is_true(H.contains(vim.api.nvim_get_current_buf(), '● A'))
+    assert.is_true(H.contains(vim.api.nvim_get_current_buf(), '└─ ● A'))
     local st = vim.api.nvim_buf_get_var(vim.api.nvim_get_current_buf(), 'logseq_graph')
     assert.are.equal('local', st.kind)
     assert.are.equal('B', st.title)

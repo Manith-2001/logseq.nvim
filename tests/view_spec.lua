@@ -14,11 +14,26 @@ describe('view.entry_title (M6.2)', function()
     assert.are.equal('a b', view.entry_title('● a b'))
   end)
 
-  it('returns nil for headers, blanks, placeholders, and junk', function()
+  it('parses tree page rows and context rows (M8.2)', function()
+    assert.are.equal('B', view.entry_title('└─ ● B'))
+    assert.are.equal('World', view.entry_title('├─ ○ World'))
+    assert.are.equal('a b', view.entry_title('└─ ● a b'))
+    assert.are.equal('B', view.entry_title('   └─ "- Ref to [[A]]" → B:1'))
+    assert.are.equal('B', view.entry_title('│  ├─ "- Ref to [[A]]" → B:2'))
+    assert.are.equal(1, view.entry_lnum('   └─ "- Ref to [[A]]" → B:1'))
+    assert.are.equal(2, view.entry_lnum('│  ├─ "- Ref to [[A]]" → B:2'))
+    assert.is_nil(view.entry_lnum('└─ ● B'))
+    assert.is_nil(view.entry_lnum('● B'))
+  end)
+
+  it('returns nil for headers, blanks, placeholders, overflow, and junk', function()
     assert.is_nil(view.entry_title('# A · graph (depth 1)'))
-    assert.is_nil(view.entry_title('## Linked (1)'))
+    assert.is_nil(view.entry_title('## Outgoing (1)'))
+    assert.is_nil(view.entry_title('## Incoming (1)'))
     assert.is_nil(view.entry_title(''))
     assert.is_nil(view.entry_title('(none)'))
+    assert.is_nil(view.entry_title('   └─ more=2'))
+    assert.is_nil(view.entry_title('│  └─ more=1'))
     assert.is_nil(view.entry_title('- [[A]]'))
     assert.is_nil(view.entry_title(nil))
   end)
@@ -36,17 +51,18 @@ describe('view.lines pure layout (M6.2)', function()
     config._reset()
   end)
 
-  it('renders Linked/Backlinks with exists/dangling markers', function()
+  it('renders Outgoing/Incoming trees with exists/dangling markers', function()
     -- Fixture: A -> [[World]] (dangling), B -> [[A]].
     local idx = index_mod.build(fixture)
     assert.are.same({
       '# A · graph (depth 1)',
       '',
-      '## Linked (1)',
-      '○ World',
+      '## Outgoing (1)',
+      '└─ ○ World',
       '',
-      '## Backlinks (1)',
-      '● B',
+      '## Incoming (1)',
+      '└─ ● B',
+      '   └─ "- Ref to [[A]]" → B:1',
     }, view.lines(idx, 'A', 1, { graph_name = 'graph' }))
   end)
 
@@ -55,10 +71,10 @@ describe('view.lines pure layout (M6.2)', function()
     assert.are.same({
       '# B · graph (depth 1)',
       '',
-      '## Linked (1)',
-      '● A',
+      '## Outgoing (1)',
+      '└─ ● A',
       '',
-      '## Backlinks (0)',
+      '## Incoming (0)',
       '(none)',
     }, view.lines(idx, 'B', 1, { graph_name = 'graph' }))
   end)
@@ -68,10 +84,10 @@ describe('view.lines pure layout (M6.2)', function()
     assert.are.same({
       '# Nope · graph (depth 1)',
       '',
-      '## Linked (0)',
+      '## Outgoing (0)',
       '(none)',
       '',
-      '## Backlinks (0)',
+      '## Incoming (0)',
       '(none)',
     }, view.lines(idx, 'Nope', 1, { graph_name = 'graph' }))
   end)
@@ -88,11 +104,12 @@ describe('view.lines pure layout (M6.2)', function()
     assert.are.same({
       '# A · graph (depth 1)',
       '',
-      '## Linked (0)',
+      '## Outgoing (0)',
       '(none)',
       '',
-      '## Backlinks (1)',
-      '● B',
+      '## Incoming (1)',
+      '└─ ● B',
+      '   └─ "- Ref to [[A]]" → B:1',
     }, view.lines(idx, 'A', 1, { graph_name = 'graph', show_dangling = false }))
   end)
 end)
@@ -193,14 +210,14 @@ describe('view depth-2 layout (M6.2)', function()
     assert.are.same({
       '# A · graph (depth 2)',
       '',
-      '## Linked (1)',
-      '● B',
+      '## Outgoing (1)',
+      '└─ ● B',
       '',
-      '## Backlinks (0)',
+      '## Incoming (0)',
       '(none)',
       '',
       '## 2 hops (1)',
-      '● C',
+      '└─ ● C',
     }, view.lines(idx, 'A', 2, { graph_name = 'graph' }))
   end)
 end)
@@ -261,7 +278,7 @@ describe('view.open buffer behavior (M6.2)', function()
     H.home()
     local buf = view.open({ root = root, title = 'A' })
     H.track_current()
-    vim.api.nvim_win_set_cursor(0, { H.find_line(buf, '● B'), 0 })
+    vim.api.nvim_win_set_cursor(0, { H.find_line(buf, '└─ ● B'), 0 })
     view.jump()
     H.track_current()
     assert.are.equal(vim.fn.resolve(root) .. '/pages/B.md', vim.api.nvim_buf_get_name(0))
@@ -272,7 +289,7 @@ describe('view.open buffer behavior (M6.2)', function()
     H.home()
     local buf = view.open({ root = root, title = 'A' })
     H.track_current()
-    vim.api.nvim_win_set_cursor(0, { H.find_line(buf, '○ Missing M62'), 0 })
+    vim.api.nvim_win_set_cursor(0, { H.find_line(buf, '└─ ○ Missing M62'), 0 })
     view.jump()
     H.track_current()
     local name = vim.api.nvim_buf_get_name(0)
@@ -297,11 +314,11 @@ describe('view.open buffer behavior (M6.2)', function()
     H.home()
     local buf = view.open({ root = root, title = 'A' })
     H.track_current()
-    assert.is_false(H.contains(buf, '● C'))
+    assert.is_false(H.contains(buf, '└─ ● C'))
     vim.fn.writefile({ '- lone' }, root .. '/pages/C.md')
     vim.fn.writefile({ '- [[B]] and [[C]]' }, root .. '/pages/A.md')
     view.refresh(buf)
-    assert.is_true(H.contains(buf, '● C'))
+    assert.is_true(H.contains(buf, '└─ ● C'))
   end)
 
   it('set_depth toggles the 2-hops section', function()
@@ -312,7 +329,7 @@ describe('view.open buffer behavior (M6.2)', function()
     assert.is_false(H.contains(buf, '## 2 hops (1)'))
     view.set_depth(buf, 2)
     assert.is_true(H.contains(buf, '## 2 hops (1)'))
-    assert.is_true(H.contains(buf, '● C'))
+    assert.is_true(H.contains(buf, '└─ ● C'))
     view.set_depth(buf, 1)
     assert.is_false(H.contains(buf, '## 2 hops (1)'))
   end)
@@ -322,12 +339,12 @@ describe('view.open buffer behavior (M6.2)', function()
     H.home()
     local buf = view.open({ root = root, title = 'A' })
     H.track_current()
-    assert.is_true(H.contains(buf, '○ Missing M62'))
+    assert.is_true(H.contains(buf, '└─ ○ Missing M62'))
     assert.is_false(view.toggle_dangling(buf))
-    assert.is_false(H.contains(buf, '○ Missing M62'))
-    assert.is_true(H.contains(buf, '## Linked (0)'))
+    assert.is_false(H.contains(buf, '└─ ○ Missing M62'))
+    assert.is_true(H.contains(buf, '## Outgoing (0)'))
     assert.is_true(view.toggle_dangling(buf))
-    assert.is_true(H.contains(buf, '○ Missing M62'))
+    assert.is_true(H.contains(buf, '└─ ○ Missing M62'))
   end)
 
   it('close deletes the explorer buffer', function()
@@ -462,11 +479,147 @@ describe('graph_view facade (M6.2)', function()
     assert.are.same({
       '# World · graph (depth 1)',
       '',
-      '## Linked (0)',
+      '## Outgoing (0)',
       '(none)',
       '',
-      '## Backlinks (1)',
-      '● A',
+      '## Incoming (1)',
+      '└─ ● A',
+      '   └─ "- Hello [[World]]" → A:1',
     }, H.buf_lines(buf))
+  end)
+end)
+
+describe('view.lines incoming tree + context (M8.2)', function()
+  local H
+  before_each(function()
+    H = harness()
+    H.setup()
+  end)
+  after_each(function()
+    H.teardown()
+  end)
+
+  it('groups context rows under each source with │ continuation', function()
+    local root = H.tmpgraph({
+      T = { '- lone' },
+      A = { '- first [[T]]', '- second [[T]]' },
+      B = { '- only [[T]]' },
+    })
+    local idx = index_mod.build(root)
+    assert.are.same({
+      '# T · graph (depth 1)',
+      '',
+      '## Outgoing (0)',
+      '(none)',
+      '',
+      '## Incoming (2)',
+      '├─ ● A',
+      '│  ├─ "- first [[T]]" → A:1',
+      '│  └─ "- second [[T]]" → A:2',
+      '└─ ● B',
+      '   └─ "- only [[T]]" → B:1',
+    }, view.lines(idx, 'T', 1, { graph_name = 'graph' }))
+  end)
+
+  it('caps context per pair with more=N, counts stay on page rows', function()
+    local root = H.tmpgraph({
+      T = { '- lone' },
+      A = { '- l1 [[T]]', '- l2 [[T]]', '- l3 [[T]]', '- l4 [[T]]', '- l5 [[T]]' },
+    })
+    local idx = index_mod.build(root)
+    assert.are.same({
+      '# T · graph (depth 1)',
+      '',
+      '## Outgoing (0)',
+      '(none)',
+      '',
+      '## Incoming (1)',
+      '└─ ● A',
+      '   ├─ "- l1 [[T]]" → A:1',
+      '   ├─ "- l2 [[T]]" → A:2',
+      '   ├─ "- l3 [[T]]" → A:3',
+      '   └─ more=2',
+    }, view.lines(idx, 'T', 1, { graph_name = 'graph' }))
+  end)
+
+  it('truncates long blocks with … keeping the → Src:lnum suffix', function()
+    local long = string.rep('x', 100)
+    local root = H.tmpgraph({ T = { '- lone' }, A = { '- ' .. long .. ' [[T]]' } })
+    local idx = index_mod.build(root)
+    local lines = view.lines(idx, 'T', 1, { graph_name = 'graph' })
+    local ctx = lines[#lines]
+    assert.is_not_nil(ctx:find('…', 1, true))
+    assert.is_not_nil(ctx:match('→ A:1$'))
+    local inner = ctx:match('"([^"]*)" →')
+    assert.is_not_nil(inner)
+    assert.are.equal(80, vim.fn.strchars(inner))
+  end)
+
+  it('shows no context children under Outgoing rows', function()
+    local root = H.tmpgraph({ T = { '- lone' }, A = { '- a [[T]]', '- b [[T]]' } })
+    local idx = index_mod.build(root)
+    assert.are.same({
+      '# A · graph (depth 1)',
+      '',
+      '## Outgoing (1)',
+      '└─ ● T',
+      '',
+      '## Incoming (0)',
+      '(none)',
+    }, view.lines(idx, 'A', 1, { graph_name = 'graph' }))
+  end)
+end)
+
+describe('view.jump jump-to-line (M8.2)', function()
+  local H
+  before_each(function()
+    H = harness()
+    H.setup()
+  end)
+  after_each(function()
+    H.teardown()
+  end)
+
+  it('lands on the exact source line from a context row', function()
+    local root = H.tmpgraph({ T = { '- lone' }, A = { '- one', '- two [[T]]', '- three' } })
+    H.home()
+    local buf = view.open({ root = root, title = 'T' })
+    H.track_current()
+    local ctx = '   └─ "- two [[T]]" → A:2'
+    assert.is_not_nil(H.find_line(buf, ctx))
+    vim.api.nvim_win_set_cursor(0, { H.find_line(buf, ctx), 0 })
+    view.jump()
+    H.track_current()
+    assert.are.equal(vim.fn.resolve(root) .. '/pages/A.md', vim.api.nvim_buf_get_name(0))
+    assert.are.equal(2, vim.api.nvim_win_get_cursor(0)[1])
+  end)
+
+  it('opens page rows at the top of the file', function()
+    local root = H.tmpgraph({ T = { '- lone' }, A = { '- one', '- two [[T]]' } })
+    H.home()
+    local buf = view.open({ root = root, title = 'T' })
+    H.track_current()
+    vim.api.nvim_win_set_cursor(0, { H.find_line(buf, '└─ ● A'), 0 })
+    view.jump()
+    H.track_current()
+    assert.are.equal(vim.fn.resolve(root) .. '/pages/A.md', vim.api.nvim_buf_get_name(0))
+    assert.are.equal(1, vim.api.nvim_win_get_cursor(0)[1])
+  end)
+
+  it('warns and stays put on overflow and header rows', function()
+    local root = H.tmpgraph({
+      T = { '- lone' },
+      A = { '- l1 [[T]]', '- l2 [[T]]', '- l3 [[T]]', '- l4 [[T]]' },
+    })
+    H.home()
+    local buf = view.open({ root = root, title = 'T' })
+    H.track_current()
+    vim.api.nvim_win_set_cursor(0, { H.find_line(buf, '   └─ more=1'), 0 })
+    view.jump()
+    assert.are.equal(buf, vim.api.nvim_get_current_buf())
+    assert.is_true(H.notified(vim.log.levels.WARN, 'no graph entry'))
+    vim.api.nvim_win_set_cursor(0, { 1, 0 }) -- header line
+    view.jump()
+    assert.are.equal(buf, vim.api.nvim_get_current_buf())
   end)
 end)
