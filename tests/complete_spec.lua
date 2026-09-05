@@ -212,3 +212,164 @@ describe('complete.omnifunc (M10.1)', function()
     assert.are.same({ { word = 'mlflow', menu = '● page' } }, complete.omnifunc(0, 'ml'))
   end)
 end)
+
+describe('complete dangling cache (M10.2)', function()
+  local tmps = {}
+  after_each(function()
+    for _, t in ipairs(tmps) do
+      vim.fn.delete(t, 'rf')
+    end
+    tmps = {}
+  end)
+
+  local function mkroot(link_line)
+    local root = vim.fn.tempname()
+    vim.fn.mkdir(root .. '/pages', 'p')
+    vim.fn.mkdir(root .. '/journals', 'p')
+    vim.fn.writefile({ link_line }, root .. '/pages/Soda.md')
+    table.insert(tmps, root)
+    return root
+  end
+
+  local function titles(items)
+    local out = {}
+    for i, item in ipairs(items) do
+      out[i] = item.title
+    end
+    return out
+  end
+
+  it('serves dangling titles stale until invalidate() drops the cache', function()
+    local root = mkroot('- [[Fizz]]')
+    assert.are.same({ 'Soda', 'Fizz' }, titles(complete.complete('', { root = root })))
+    vim.fn.writefile({ '- no links here' }, root .. '/pages/Soda.md')
+    -- Stale by design: the cached index still advertises Fizz.
+    assert.are.same({ 'Soda', 'Fizz' }, titles(complete.complete('', { root = root })))
+    complete.invalidate(root)
+    assert.are.same({ 'Soda' }, titles(complete.complete('', { root = root })))
+  end)
+
+  it('invalidate() with no root clears every cached root', function()
+    local a, b = mkroot('- [[Fizz]]'), mkroot('- [[Buzz]]')
+    assert.are.same({ 'Soda', 'Fizz' }, titles(complete.complete('', { root = a })))
+    assert.are.same({ 'Soda', 'Buzz' }, titles(complete.complete('', { root = b })))
+    vim.fn.writefile({ '- no links here' }, a .. '/pages/Soda.md')
+    vim.fn.writefile({ '- no links here' }, b .. '/pages/Soda.md')
+    complete.invalidate()
+    assert.are.same({ 'Soda' }, titles(complete.complete('', { root = a })))
+    assert.are.same({ 'Soda' }, titles(complete.complete('', { root = b })))
+  end)
+end)
+
+describe('complete graph_max_files fallback (M10.2)', function()
+  local repo = vim.fn.fnamemodify(debug.getinfo(1, 'S').source:sub(2), ':p:h:h')
+  local fixture = repo .. '/tests/fixtures/graph'
+  local config = require('logseq.config')
+  local saved_g, saved_notify
+  local notes = {}
+  before_each(function()
+    saved_g = vim.g.logseq
+    saved_notify = vim.notify
+    notes = {}
+    vim.notify = function(msg, level)
+      table.insert(notes, { msg = msg, level = level })
+    end
+  end)
+  after_each(function()
+    vim.notify = saved_notify
+    vim.g.logseq = saved_g
+    config._reset()
+    require('logseq.complete').invalidate()
+  end)
+
+  local function warned(fragment)
+    for _, n in ipairs(notes) do
+      if n.level == vim.log.levels.WARN and n.msg:find(fragment, 1, true) then
+        return true
+      end
+    end
+    return false
+  end
+
+  it('offers pages only plus one WARN over graph_max_files', function()
+    config.setup({ graph_max_files = 1 }) -- fixture holds 3 files
+    local items = complete.complete('', { root = fixture })
+    local got = {}
+    for i, item in ipairs(items) do
+      got[i] = item.title
+    end
+    assert.are.same({ '2026_08_27', 'A', 'B' }, got) -- no dangling World
+    assert.is_true(warned('too large'))
+    local n = #notes
+    complete.complete('', { root = fixture }) -- second popup stays quiet
+    assert.are.equal(n, #notes)
+  end)
+end)
+
+describe('complete.auto_popup (M10.2)', function()
+  local prev_buf, scratch
+  local orig_mode, orig_pumvisible
+  before_each(function()
+    prev_buf = vim.api.nvim_get_current_buf()
+    scratch = {}
+    orig_mode, orig_pumvisible = vim.fn.mode, vim.fn.pumvisible
+  end)
+  after_each(function()
+    vim.fn.mode, vim.fn.pumvisible = orig_mode, orig_pumvisible
+    pcall(vim.api.nvim_set_current_buf, prev_buf)
+    for _, b in ipairs(scratch) do
+      pcall(vim.api.nvim_buf_delete, b, { force = true })
+    end
+  end)
+
+  local function use_buf(lines)
+    local buf = vim.api.nvim_create_buf(true, false)
+    table.insert(scratch, buf)
+    vim.api.nvim_set_current_buf(buf)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    return buf
+  end
+
+  it('declines outside insert mode, however open the context', function()
+    use_buf({ '[[ml' })
+    vim.api.nvim_win_set_cursor(0, { 1, 4 })
+    local fired = 0
+    assert.is_false(complete.auto_popup(function()
+      fired = fired + 1
+    end))
+    assert.are.equal(0, fired)
+  end)
+
+  it('fires the trigger once for an open context in insert mode', function()
+    vim.fn.mode = function()
+      return 'i'
+    end
+    use_buf({ 'see #ml' })
+    vim.api.nvim_win_set_cursor(0, { 1, 7 })
+    local fired = 0
+    assert.is_true(complete.auto_popup(function()
+      fired = fired + 1
+    end))
+    assert.are.equal(1, fired)
+  end)
+
+  it('declines with no context or a visible popup', function()
+    vim.fn.mode = function()
+      return 'i'
+    end
+    use_buf({ '- plain' })
+    vim.api.nvim_win_set_cursor(0, { 1, 7 })
+    local fired = 0
+    local spy = function()
+      fired = fired + 1
+    end
+    assert.is_false(complete.auto_popup(spy))
+    use_buf({ '[[ml' })
+    vim.api.nvim_win_set_cursor(0, { 1, 4 })
+    vim.fn.pumvisible = function()
+      return 1
+    end
+    assert.is_false(complete.auto_popup(spy))
+    assert.are.equal(0, fired)
+  end)
+end)

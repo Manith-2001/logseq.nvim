@@ -8,6 +8,8 @@
 ---@field graphs_depth integer max levels below each scan dir (M5, default 2)
 ---@field graph_depth integer explorer depth for :LogseqGraph (M6.2, default 1)
 ---@field graph_max_files integer max files indexed synchronously (M6.2, default 2000)
+---@field completion_auto boolean auto-popup [[ ]] completion while typing (M10.2, default true)
+---@field completion_limit integer max popup items (M10.2, default 50)
 ---@field todo_cycles string[][] marker chains for :LogseqCycleTodo, last wraps to first (M8)
 
 local M = {}
@@ -23,6 +25,8 @@ local defaults = {
   graphs_depth = 2,
   graph_depth = 1,
   graph_max_files = 2000,
+  completion_auto = true,
+  completion_limit = 50,
   -- M8: first chain containing a marker wins (DONE -> TODO via chain 1).
   todo_cycles = {
     { 'TODO', 'DOING', 'DONE' },
@@ -56,6 +60,8 @@ local known_keys = {
   graphs_depth = true,
   graph_depth = true,
   graph_max_files = true,
+  completion_auto = true,
+  completion_limit = true,
   todo_cycles = true,
 }
 
@@ -89,6 +95,8 @@ function M.setup(opts)
     graphs_depth = { current.graphs_depth, 'number' },
     graph_depth = { current.graph_depth, 'number' },
     graph_max_files = { current.graph_max_files, 'number' },
+    completion_auto = { current.completion_auto, 'boolean' },
+    completion_limit = { current.completion_limit, 'number' },
     todo_cycles = { current.todo_cycles, 'table' },
   })
   return current

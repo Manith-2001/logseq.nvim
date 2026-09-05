@@ -662,15 +662,24 @@ Chosen because `plenary.nvim` is already installed — zero new dependencies.
     - [x] `omnifunc()` body + `menu()` pulled forward (thin wrappers
       over the core; M10.2 keeps the ftplugin/auto/cache wiring)
   - M10.2 — Omnifunc + auto-popup (native UX, no frameworks)
-    - [ ] `omnifunc(findstart, base)` 2-phase; `]]`-dedup on accept;
+    - [x] `omnifunc(findstart, base)` 2-phase (body landed in M10.1);
+      `]]`-dedup is structural — insertion replaces startcol..cursor
+      only and never emits brackets, so a trailing `]]` cannot double;
       root via `graph.find_root()` (buffer-anchored);
-      `completion_limit` applied
-    - [ ] ftplugin: buffer-local `omnifunc` (set only when unset) +
-      `InsertCharPre` auto-popup (`[[` + inside-bracket typing,
-      `pumvisible()` guard, `vim.schedule` debounce,
-      `completion_auto` gate)
-    - [ ] Dangling cache + `BufWritePost`/`DirChanged`
-      invalidation + `graph_max_files` pages-only fallback
+      `completion_limit` applied (config default 50 via `opts.limit`)
+    - [x] ftplugin: buffer-local `omnifunc` + `InsertCharPre`
+      auto-popup (open `[[`/`#[[`/`#` contexts, `pumvisible()` guard,
+      `vim.schedule` past the inserted char, `completion_auto`
+      gate read at fire time). Deviation from "only when unset":
+      stock markdown.vim chains html.vim, so every markdown buffer
+      arrives with `htmlcomplete#CompleteTags` — takeover also
+      applies there, never over a user-set value.
+    - [x] Dangling cache + `BufWritePost`/`DirChanged`
+      invalidation (wiring in `plugin/logseq.lua`, `invalidate()`
+      public) + `graph_max_files` pages-only fallback (one WARN
+      per root, like `guard_size`)
+    - [x] Config: `completion_auto = true`, `completion_limit = 50`
+      (defaults + known_keys + validation)
   - M10.3 — nvim-cmp + blink sources (thin wrappers, same core)
     - [ ] `cmp.lua`: `new()` / `is_available()` / trigger
       `{ '[', '#' }` / `complete()` → core → callback (only under

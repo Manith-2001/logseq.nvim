@@ -1,7 +1,8 @@
 --- [[ ]] completion core (M10.1): prefix -> ranked page titles.
 --- Pure find_start()/rank() plus a thin complete()/omnifunc() edge.
---- complete() reads list_pages() fresh and rebuilds the index per call;
---- the M10 per-root index cache + invalidation arrives with M10.2.
+--- list_pages() stays fresh per popup; the dangling titles from
+--- index.build() are cached per root (M10.2) until invalidate() drops
+--- them (BufWritePost *.md / DirChanged wiring in plugin/logseq.lua).
 local graph = require('logseq.graph')
 local index_mod = require('logseq.index')
 local config = require('logseq.config')
@@ -154,18 +155,66 @@ local function order_block(prefix, block)
   return out
 end
 
+--- Per-root cache of dangling items (M10.2): index.build() is reused
+--- until invalidate() drops it. Roots already warned as over
+--- graph_max_files warn once per cache lifetime; invalidate() resets so
+--- a shrunk graph warns afresh.
+---@type table<string, LogseqCompleteItem[]>
+local dangling_cache = {}
+---@type table<string, boolean>
+local warned_big = {}
+
+--- Drop the completion cache: one root, or everything when root is nil.
+--- Called by the BufWritePost/DirChanged wiring and safe anytime (lazy
+--- rebuild on the next popup).
+---@param root string|nil
+function M.invalidate(root)
+  if root == nil then
+    dangling_cache = {}
+    warned_big = {}
+    return
+  end
+  dangling_cache[root] = nil
+  warned_big[root] = nil
+end
+
+--- Split an item list into existing + dangling-shaped blocks,
+--- skipping malformed entries. Injected opts.items take this path.
+---@param list LogseqCompleteItem[]
+---@return LogseqCompleteItem[], LogseqCompleteItem[]
+local function split_items(list)
+  local have, missing = {}, {}
+  for _, item in ipairs(list) do
+    if type(item) == 'table' and type(item.title) == 'string' then
+      if item.exists then
+        table.insert(have, item)
+      else
+        table.insert(missing, item)
+      end
+    end
+  end
+  return have, missing
+end
+
 --- Complete prefix against the graph: fresh list_pages() titles plus the
---- dangling titles from index.build(), existing ranked before dangling.
---- opts.root overrides root resolution (used by tests); opts.items
---- injects items directly (used by tests); opts.limit truncates after
---- ranking (the config completion_limit arrives this way). Nil-safe.
+--- cached dangling titles from index.build(), existing ranked before
+--- dangling. Graphs over graph_max_files fall back to pages only (one
+--- WARN per root, like guard_size). opts.root overrides root resolution
+--- (used by tests); opts.items injects items directly (used by tests);
+--- opts.limit truncates after ranking (the config completion_limit
+--- arrives this way). Nil-safe.
 ---@param prefix string|nil
 ---@param opts table|nil ({root=, items=, limit=} overrides)
 ---@return LogseqCompleteItem[]
 function M.complete(prefix, opts)
   opts = opts or {}
-  local items = opts.items
-  if items == nil then
+  local have, missing
+  if opts.items ~= nil then
+    if type(opts.items) ~= 'table' then
+      return {}
+    end
+    have, missing = split_items(opts.items)
+  else
     local root = opts.root
     if type(root) ~= 'string' or root == '' then
       root = graph.find_root()
@@ -173,36 +222,45 @@ function M.complete(prefix, opts)
     if type(root) ~= 'string' or root == '' then
       return {}
     end
-    items = {}
+    have, missing = {}, {}
     local seen = {}
-    for _, page in ipairs(graph.list_pages(root)) do
+    local pages = graph.list_pages(root)
+    for _, page in ipairs(pages) do
       if type(page.title) == 'string' and not seen[page.title] then
         seen[page.title] = true
         table.insert(
-          items,
+          have,
           { title = page.title, kind = page.kind, path = page.path, exists = true }
         )
       end
     end
-    local ok, idx = pcall(index_mod.build, root)
-    if ok and idx ~= nil and type(idx.nodes) == 'table' then
-      for title, node in pairs(idx.nodes) do
-        if not seen[title] and type(node) == 'table' and node.exists == false then
-          seen[title] = true
-          table.insert(items, { title = title, kind = 'dangling', path = nil, exists = false })
-        end
+    if #pages > config.get().graph_max_files then
+      if not warned_big[root] then
+        warned_big[root] = true
+        vim.notify(
+          ('logseq.nvim: graph too large (%d files > %d graph_max_files); completion offers pages only, dangling refs hidden'):format(
+            #pages,
+            config.get().graph_max_files
+          ),
+          vim.log.levels.WARN
+        )
       end
-    end
-  end
-  if type(items) ~= 'table' then
-    return {}
-  end
-  local have, missing = {}, {}
-  for _, item in ipairs(items) do
-    if type(item) == 'table' and type(item.title) == 'string' then
-      if item.exists then
-        table.insert(have, item)
-      else
+    else
+      local cached = dangling_cache[root]
+      if cached == nil then
+        cached = {}
+        local ok, idx = pcall(index_mod.build, root)
+        if ok and idx ~= nil and type(idx.nodes) == 'table' then
+          for title, node in pairs(idx.nodes) do
+            if not seen[title] and type(node) == 'table' and node.exists == false then
+              seen[title] = true
+              table.insert(cached, { title = title, kind = 'dangling', path = nil, exists = false })
+            end
+          end
+        end
+        dangling_cache[root] = cached
+      end
+      for _, item in ipairs(cached) do
         table.insert(missing, item)
       end
     end
@@ -270,6 +328,39 @@ function M.omnifunc(findstart, base)
     table.insert(out, { word = item.title, menu = M.menu(item) })
   end
   return out
+end
+
+--- Feed <C-x><C-o> as typed keys (noremap): the auto-popup re-enters
+--- through omnifunc(), so manual and auto share one path.
+local function feed_omni()
+  local keys = vim.api.nvim_replace_termcodes('<C-x><C-o>', true, false, true)
+  vim.api.nvim_feedkeys(keys, 'n', false)
+end
+
+--- Fire one auto-popup when the cursor sits in an open `[[` / `#[[` /
+--- `#` context (the InsertCharPre wiring + completion_auto gate live in
+--- after/ftplugin/markdown.lua). Guards: a visible popup, non-insert
+--- mode, and no context all decline. trigger is a test seam (default
+--- feeds omni).
+---@param trigger function|nil
+---@return boolean true when a popup was triggered
+function M.auto_popup(trigger)
+  if vim.fn.pumvisible() ~= 0 then
+    return false
+  end
+  if vim.fn.mode() ~= 'i' then
+    return false
+  end
+  local line, col = cursor_context()
+  if line == nil or col == nil then
+    return false
+  end
+  if M.find_start(line, col) == nil then
+    return false
+  end
+  local fire = trigger or feed_omni
+  fire()
+  return true
 end
 
 return M
