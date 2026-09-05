@@ -67,7 +67,7 @@ After install, run `:helptags ALL` once so this help is indexed, then
 - `:LogseqNew [title]` .. open a page; prompts when no title is given.
 - `:LogseqGraphs` ....... pick the active graph (see
   |logseq-multigraph|).
-- `:LogseqGraph [title]`  explore a page's links (Linked + Backlinks)
+- `:LogseqGraph [title]`  explore a page's links (Outgoing + Incoming)
   in a scratch buffer (see |logseq-graphview|).
 - `:LogseqGraphAll` ..... overview of the whole graph with per-entry
   link counts, plus a picker to any page's local view (same section).
@@ -110,13 +110,16 @@ unless you map them (see |logseq-mappings|).
                                                            *:LogseqGraph*
 :LogseqGraph [title]
     Explore one page's links in a scratch `filetype=logseq-graph`
-    buffer: Linked + Backlinks sections (`2 hops` at depth 2). The
-    center is `[title]`, else the current `pages/*` / `journals/*`
-    buffer, else a prompt. `●` = the target file exists, `○` =
-    dangling (opens lazily, nothing is written until content +
-    `:w`). Buffer-local keys: `<CR>` / `gf` open the entry under the
-    cursor, `q` closes, `r` refreshes, `1` / `2` set the depth, `T`
-    toggles dangling entries. The index builds synchronously and
+    buffer: an Outgoing tree, an Incoming tree whose rows carry the
+    exact blocks that link here (`"block" → Source:lnum`, capped per
+    source with `more=N`), and at depth 2 a `2 hops` section grouped
+    under `via <page>` subheadings. The center is `[title]`, else the
+    current `pages/*` / `journals/*` buffer, else a prompt. `●` = the
+    target file exists, `○` = dangling (opens lazily, nothing is
+    written until content + `:w`). Buffer-local keys: `<CR>` / `gf`
+    open the entry under the cursor (a context row jumps to the exact
+    source line), `q` closes, `r` refreshes, `1` / `2` set the depth,
+    `T` toggles dangling entries. The index builds synchronously and
     refuses graphs over |logseq-config| `graph_max_files` with a
     warning. See |logseq-graphview|.
 
@@ -126,10 +129,12 @@ unless you map them (see |logseq-mappings|).
     buffer: a stats header (`N pages · M journals · …`) plus `Pages` /
     `Journals` / `Dangling` sections with per-entry link counts
     (`● A →1 ←1` = one out-link, one backlink; `○` dangling entries
-    show backlinks only). Same keys as |:LogseqGraph|, except depth
-    has no meaning here: `1` / `2` are replaced by `P`, which picks a
-    page (Telescope, |vim.ui.select| fallback) and opens its local
-    view. Same root resolution and `graph_max_files` guard.
+    show backlinks only). Same keys as |:LogseqGraph|, except the
+    overview is counts-only: `<CR>` / `gf` drill down into the entry's
+    local view (where its edges are visible), and depth has no meaning
+    here, so `1` / `2` are replaced by `P`, which picks a page
+    (Telescope, |vim.ui.select| fallback) and opens its local view.
+    Same root resolution and `graph_max_files` guard.
 
 ==============================================================================
 6. MAPPINGS                                          *logseq-mappings*
@@ -242,13 +247,23 @@ over `pages/*.md` + `journals/*.md` and refuses graphs over
 |logseq-config| `graph_max_files` (default 2000) with a warning
 instead of stalling. Namespace targets (`[[a/b]]`) are skipped by the
 index, matching the facade's out-of-scope refusal (see
-|logseq-semantics|); self-loops list under Linked but never as their
+|logseq-semantics|); self-loops list under Outgoing but never as their
 own backlink.
+
+The local view is a tree: `## Outgoing` lists pages the center links
+to, `## Incoming` lists backlink sources, each with the exact blocks
+holding the link (`"block text" → Source:lnum`; long blocks trimmed
+to ~80 cols, capped at 3 rows per source with a `more=N` overflow
+row). `<CR>` on a context row jumps to that `Source:lnum` line; page
+rows open the page itself. At depth 2 a `## 2 hops` section groups the
+remaining pages under `via <page>` subheadings naming the 1-hop page
+they hang off (a page reachable several ways lists under each).
 
 `:LogseqGraphAll` renders the same index globally: stats header plus
 `Pages` / `Journals` / `Dangling` sections (`:LogseqGraphAll`), with
 per-entry `→out ←back` counts so hubs, orphans (`→0 ←0`), and
-dangling refs stand out. `P` jumps from the overview to any page's
-local view through the standard picker.
+dangling refs stand out. `<CR>` drills from an entry into its local
+view; `P` jumps from the overview to any page's local view through
+the standard picker.
 
   vim:tw=78:ts=8:ft=help:norl:

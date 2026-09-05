@@ -1,8 +1,11 @@
---- Graph explorer (M6.2 local, M6.3 global, M8.2 tree + context): scratch
---- `filetype=logseq-graph` buffers rendering the M6.1 link index.
---- Local (`M.open`): one page's Outgoing/Incoming tree. Global (`M.open_all`):
+--- Graph explorer (M6.2 local, M6.3 global, M8.2 tree + context, M8.3
+--- drill-down + via-groups): scratch `filetype=logseq-graph` buffers
+--- rendering the M6.1 link index.
+--- Local (`M.open`): one page's Outgoing/Incoming tree (+ `2 hops`
+--- grouped under `via <page>` at depth 2). Global (`M.open_all`):
 --- every page/journal/dangling ref with per-entry link counts
---- (`● A →1 ←1`, `○ World ←1`). `●` marks a target whose file exists,
+--- (`● A →1 ←1`, `○ World ←1`); `<CR>` on a global row drills down
+--- into that page's local explorer. `●` marks a target whose file exists,
 --- `○` a dangling ref (jump opens it lazily via page.open_lazy: nothing
 --- is written until content + `:w`). Local page rows use tree branches
 --- (`├─`/`└─`); Incoming rows carry capped block-context children
@@ -146,7 +149,7 @@ local function page_text(title, exists)
   return (exists and MARK_EXISTS or MARK_DANGLING) .. ' ' .. title
 end
 
---- Tree section of plain page rows (Outgoing, 2 hops): `├─`/`└─`
+--- Tree section of plain page rows (Outgoing): `├─`/`└─`
 --- branches with `●`/`○` marks, `(none)` when empty.
 ---@param out string[]
 ---@param heading string section heading without the count
@@ -214,8 +217,72 @@ local function incoming_section(out, heading, idx, center, titles, show_dangling
   end
 end
 
+--- Depth-2 section: 2-hop pages grouped under `via <intermediate>`
+--- subheadings (one group per 1-hop neighbor reaching them), each group
+--- a tree of plain page rows. A 2-hop page reached through several
+--- intermediates lists under each (full provenance). Groups with no
+--- visible pages are omitted with their subheading, and the count is
+--- the distinct 2-hop pages shown. With show_dangling=false, dangling
+--- intermediates and pages vanish like in every other section — a page
+--- reachable only through a hidden intermediate drops out with it.
+--- `via` subheadings parse as nil in entry_title (no mark, no arrow),
+--- so jump() warns and stays put on them like on any header.
+---@param out string[]
+---@param idx LogseqGraphIndex
+---@param near string[] sorted 1-hop neighbors (both directions)
+---@param hops string[] sorted 2-hop pages (already excluding near + center)
+---@param show_dangling boolean
+local function hops_section(out, idx, near, hops, show_dangling)
+  local vis_near = shown(idx, near, show_dangling)
+  local vis_hops = shown(idx, hops, show_dangling)
+  local adj = {}
+  for _, n in ipairs(vis_near) do
+    local set = {}
+    for _, t in ipairs(index_mod.forward(idx, n)) do
+      set[t] = true
+    end
+    for _, t in ipairs(index_mod.back(idx, n)) do
+      set[t] = true
+    end
+    adj[n] = set
+  end
+  local groups, listed = {}, {}
+  for _, n in ipairs(vis_near) do
+    local rows = {}
+    for _, h in ipairs(vis_hops) do
+      if adj[n][h] then
+        table.insert(rows, h)
+      end
+    end
+    if #rows > 0 then
+      table.insert(groups, { via = n, rows = rows })
+      for _, h in ipairs(rows) do
+        listed[h] = true
+      end
+    end
+  end
+  local count = 0
+  for _ in pairs(listed) do
+    count = count + 1
+  end
+  table.insert(out, ('## 2 hops (%d)'):format(count))
+  if count == 0 then
+    table.insert(out, PLACEHOLDER)
+    return
+  end
+  for _, g in ipairs(groups) do
+    table.insert(out, 'via ' .. g.via)
+    for i, t in ipairs(g.rows) do
+      local node = idx.nodes[t]
+      local exists = node ~= nil and node.exists
+      table.insert(out, (i == #g.rows and BRANCH_LAST or BRANCH_MID) .. page_text(t, exists))
+    end
+  end
+end
+
 --- Pure layout: header + Outgoing/Incoming tree sections (+ `2 hops` at
---- depth 2, i.e. neighbors exactly two edges away). Incoming page rows
+--- depth 2, i.e. neighbors exactly two edges away, grouped under
+--- `via <page>` subheadings). Incoming page rows
 --- carry their block-context children (`"block" → Src:lnum`, capped per
 --- pair with `more=N`); Outgoing and 2-hops rows are plain tree rows.
 --- Unknown titles render as empty sections, never an error (a dangling
@@ -239,22 +306,26 @@ function M.lines(idx, title, depth, opts)
   table.insert(out, '')
   incoming_section(out, '## Incoming', idx, title, back, show_dangling)
   if depth == 2 then
-    local near = {}
+    local near_set = {}
     for _, t in ipairs(fwd) do
-      near[t] = true
+      near_set[t] = true
     end
     for _, t in ipairs(back) do
-      near[t] = true
+      near_set[t] = true
     end
+    local near = {}
+    for t in pairs(near_set) do
+      table.insert(near, t)
+    end
+    table.sort(near)
     local hops = {}
     for _, t in ipairs(index_mod.neighbors(idx, title, 2)) do
-      if not near[t] then
+      if not near_set[t] then
         table.insert(hops, t)
       end
     end
-    table.sort(hops)
     table.insert(out, '')
-    tree_section(out, '## 2 hops', idx, hops, show_dangling)
+    hops_section(out, idx, near, hops, show_dangling)
   end
   return out
 end
@@ -559,11 +630,13 @@ function M.pick_page(buf)
   })
 end
 
---- Open the entry under the cursor: existing pages/journals via :edit,
---- dangling refs lazily (no file until content + `:w`). Context rows
---- (`"block" → Src:lnum`) land on the exact source line; page rows keep
---- today's behavior (top of file). Stays put with a warning when the
---- cursor is not on an entry.
+--- Open the entry under the cursor. In the global overview every entry
+--- drills down into that page's local explorer (where its edges are now
+--- visible). In the local explorer, existing pages/journals open via
+--- :edit and dangling refs lazily (no file until content + `:w`).
+--- Context rows (`"block" → Src:lnum`) land on the exact source line;
+--- page rows keep today's behavior (top of file). Stays put with a
+--- warning when the cursor is not on an entry.
 ---@param buf integer|nil (default current buffer)
 ---@param lnum integer|nil (default cursor line)
 function M.jump(buf, lnum)
@@ -575,6 +648,14 @@ function M.jump(buf, lnum)
   local title = M.entry_title(cur)
   if title == nil then
     vim.notify('logseq.nvim: no graph entry under cursor', vim.log.levels.WARN)
+    return
+  end
+  if st.kind == 'all' then
+    -- Drill down: the overview is counts-only, so <CR> opens the local
+    -- explorer (via the facade: same path as the P picker, including
+    -- depth config and the namespace refusal). Lazy require: no
+    -- init↔view cycle.
+    require('logseq').graph_view({ root = st.root, title = title })
     return
   end
   if title:find('/', 1, true) then

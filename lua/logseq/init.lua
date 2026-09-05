@@ -265,9 +265,10 @@ local function guard_size(root)
   return true
 end
 
---- Open the local graph explorer (M6.2) for one page: Linked +
---- Backlinks (+ `2 hops` at depth 2) in a scratch `filetype=logseq-graph`
---- buffer. The center title comes from opts.title (or :LogseqGraph's
+--- Open the local graph explorer (M6.2) for one page: Outgoing +
+--- Incoming trees (+ `via`-grouped `2 hops` at depth 2) with
+--- block-context rows under Incoming entries, in a scratch
+--- `filetype=logseq-graph` buffer. The center title comes from opts.title (or :LogseqGraph's
 --- [title] arg), else the current pages/*/journals/* buffer, else a
 --- prompt; cancelling aborts quietly. The index builds synchronously and
 --- refuses graphs over graph_max_files with a warning (raise the key to
@@ -322,9 +323,10 @@ end
 
 --- Open the global graph overview (M6.3): every page/journal/dangling
 --- ref with per-entry link counts in a scratch `filetype=logseq-graph`
---- buffer. `<CR>`/`gf` jumps to the entry's page, `P` picks a page for
---- the local explorer, `T` toggles dangling, `r` refreshes, `q` closes.
---- Same root resolution and graph_max_files guard as graph_view.
+--- buffer. `<CR>`/`gf` drill down into the entry's local view, `P`
+--- picks a page for the local explorer, `T` toggles dangling, `r`
+--- refreshes, `q` closes. Same root resolution and graph_max_files
+--- guard as graph_view.
 --- opts.root overrides root resolution (used by tests).
 ---@param opts table|nil ({root=}; no command args: :LogseqGraphAll takes none)
 ---@return integer|nil explorer bufnr, or nil when aborted

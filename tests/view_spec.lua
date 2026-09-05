@@ -26,7 +26,7 @@ describe('view.entry_title (M6.2)', function()
     assert.is_nil(view.entry_lnum('● B'))
   end)
 
-  it('returns nil for headers, blanks, placeholders, overflow, and junk', function()
+  it('returns nil for headers, blanks, placeholders, overflow, via, and junk', function()
     assert.is_nil(view.entry_title('# A · graph (depth 1)'))
     assert.is_nil(view.entry_title('## Outgoing (1)'))
     assert.is_nil(view.entry_title('## Incoming (1)'))
@@ -34,6 +34,7 @@ describe('view.entry_title (M6.2)', function()
     assert.is_nil(view.entry_title('(none)'))
     assert.is_nil(view.entry_title('   └─ more=2'))
     assert.is_nil(view.entry_title('│  └─ more=1'))
+    assert.is_nil(view.entry_title('via B'))
     assert.is_nil(view.entry_title('- [[A]]'))
     assert.is_nil(view.entry_title(nil))
   end)
@@ -204,7 +205,7 @@ describe('view depth-2 layout (M6.2)', function()
     H.teardown()
   end)
 
-  it('adds an exactly-two-hops section at depth 2', function()
+  it('adds an exactly-two-hops section grouped under via at depth 2', function()
     local root = H.tmpgraph({ A = { '- [[B]]' }, B = { '- [[C]]' }, C = { '- lone' } })
     local idx = index_mod.build(root)
     assert.are.same({
@@ -217,6 +218,7 @@ describe('view depth-2 layout (M6.2)', function()
       '(none)',
       '',
       '## 2 hops (1)',
+      'via B',
       '└─ ● C',
     }, view.lines(idx, 'A', 2, { graph_name = 'graph' }))
   end)
@@ -621,5 +623,128 @@ describe('view.jump jump-to-line (M8.2)', function()
     vim.api.nvim_win_set_cursor(0, { 1, 0 }) -- header line
     view.jump()
     assert.are.equal(buf, vim.api.nvim_get_current_buf())
+  end)
+end)
+
+describe('view.lines 2-hops via groups (M8.3)', function()
+  local H
+  before_each(function()
+    H = harness()
+    H.setup()
+  end)
+  after_each(function()
+    H.teardown()
+  end)
+
+  it('groups 2-hop pages under each intermediate; shared pages repeat', function()
+    -- A -> B, C; B -> D; C -> D, E: D is reachable via both.
+    local root = H.tmpgraph({
+      A = { '- [[B]] [[C]]' },
+      B = { '- [[D]]' },
+      C = { '- [[D]] [[E]]' },
+      D = { '- lone' },
+      E = { '- lone' },
+    })
+    local idx = index_mod.build(root)
+    assert.are.same({
+      '# A · graph (depth 2)',
+      '',
+      '## Outgoing (2)',
+      '├─ ● B',
+      '└─ ● C',
+      '',
+      '## Incoming (0)',
+      '(none)',
+      '',
+      '## 2 hops (2)',
+      'via B',
+      '└─ ● D',
+      'via C',
+      '├─ ● D',
+      '└─ ● E',
+    }, view.lines(idx, 'A', 2, { graph_name = 'graph' }))
+  end)
+
+  it('groups incoming-direction paths under via too', function()
+    -- X -> B -> A: X is two edges behind the center.
+    local root = H.tmpgraph({ A = { '- lone' }, B = { '- [[A]]' }, X = { '- [[B]]' } })
+    local idx = index_mod.build(root)
+    assert.are.same({
+      '# A · graph (depth 2)',
+      '',
+      '## Outgoing (0)',
+      '(none)',
+      '',
+      '## Incoming (1)',
+      '└─ ● B',
+      '   └─ "- [[A]]" → B:1',
+      '',
+      '## 2 hops (1)',
+      'via B',
+      '└─ ● X',
+    }, view.lines(idx, 'A', 2, { graph_name = 'graph' }))
+  end)
+
+  it('omits empty groups, (none) when no 2-hop pages exist', function()
+    local bare = H.tmpgraph({ A = { '- [[B]]' }, B = { '- lone' } })
+    local idx = index_mod.build(bare)
+    local lines = view.lines(idx, 'A', 2, { graph_name = 'graph' })
+    assert.are.same({ '## 2 hops (0)', '(none)' }, { lines[#lines - 1], lines[#lines] })
+    -- B reaches only C, which is already 1 hop away: no group for B.
+    local root = H.tmpgraph({ A = { '- [[B]] [[C]]' }, B = { '- [[C]]' }, C = { '- lone' } })
+    local idx2 = index_mod.build(root)
+    local lines2 = view.lines(idx2, 'A', 2, { graph_name = 'graph' })
+    assert.are.same({ '## 2 hops (0)', '(none)' }, { lines2[#lines2 - 1], lines2[#lines2] })
+  end)
+
+  it('hides dangling intermediates and orphan pages with show_dangling=false', function()
+    -- X -> [[M]] <- A -> B -> Y: X hangs off dangling M.
+    local root = H.tmpgraph({
+      A = { '- [[M]] [[B]]' },
+      B = { '- [[Y]]' },
+      X = { '- [[M]]' },
+      Y = { '- lone' },
+    })
+    local idx = index_mod.build(root)
+    assert.are.same({
+      '# A · graph (depth 2)',
+      '',
+      '## Outgoing (2)',
+      '├─ ● B',
+      '└─ ○ M',
+      '',
+      '## Incoming (0)',
+      '(none)',
+      '',
+      '## 2 hops (2)',
+      'via B',
+      '└─ ● Y',
+      'via M',
+      '└─ ● X',
+    }, view.lines(idx, 'A', 2, { graph_name = 'graph' }))
+    assert.are.same({
+      '# A · graph (depth 2)',
+      '',
+      '## Outgoing (1)',
+      '└─ ● B',
+      '',
+      '## Incoming (0)',
+      '(none)',
+      '',
+      '## 2 hops (1)',
+      'via B',
+      '└─ ● Y',
+    }, view.lines(idx, 'A', 2, { graph_name = 'graph', show_dangling = false }))
+  end)
+
+  it('warns and stays put on via subheadings', function()
+    local root = H.tmpgraph({ A = { '- [[B]]' }, B = { '- [[C]]' }, C = { '- lone' } })
+    H.home()
+    local buf = view.open({ root = root, title = 'A', depth = 2 })
+    H.track_current()
+    vim.api.nvim_win_set_cursor(0, { H.find_line(buf, 'via B'), 0 })
+    view.jump()
+    assert.are.equal(buf, vim.api.nvim_get_current_buf())
+    assert.is_true(H.notified(vim.log.levels.WARN, 'no graph entry'))
   end)
 end)
