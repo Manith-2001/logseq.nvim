@@ -21,3 +21,21 @@ vim.b[buf].logseq_root = root
 -- Logseq nests blocks with hard tabs (see PLAN.md §8.4); keep them literal
 -- instead of expanding to spaces on indent.
 vim.opt_local.expandtab = false
+-- Buffer-local Logseq keys (M9, the documented exception to the
+-- no-default-keys rule; user-removable via :nunmap <buffer>). Each key
+-- is guarded independently: an existing map (user or otherwise) is never
+-- clobbered, so partial user config still gets the remaining keys.
+local function bufmap(lhs, fn, desc)
+  if vim.fn.maparg(lhs, 'n') == '' then
+    vim.keymap.set('n', lhs, fn, { buffer = buf, silent = true, desc = desc })
+  end
+end
+bufmap('<CR>', function()
+  require('logseq').smart_action()
+end, 'Logseq: follow link, cycle task, or move down')
+bufmap('[o', function()
+  require('logseq').nav_link('prev')
+end, 'Logseq: jump to previous link')
+bufmap(']o', function()
+  require('logseq').nav_link('next')
+end, 'Logseq: jump to next link')

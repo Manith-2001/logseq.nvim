@@ -537,21 +537,20 @@ Chosen because `plenary.nvim` is already installed — zero new dependencies.
       cursor *on* a link moves to the next one), set cursor on match
       start, silent no-op at ends; assert on bad direction
   - M9.2 — Commands + `<Plug>` + ftplugin
-    - [ ] `:LogseqSmartAction` / `:LogseqNextLink` / `:LogseqPrevLink`
+    - [x] `:LogseqSmartAction` / `:LogseqNextLink` / `:LogseqPrevLink`
       + `<Plug>(LogseqSmartAction)` / `<Plug>(LogseqNextLink)` /
       `<Plug>(LogseqPrevLink)` (`hasmapto` guards, idempotent)
-    - [ ] ftplugin buffer-local `<CR>` / `[o` / `]o` with
-      `nvim_buf_get_keymap` no-clobber guards (graph files only)
+    - [x] ftplugin buffer-local `<CR>` / `[o` / `]o` with no-clobber
+      guards (skip when any map already exists; graph files only)
   - M9.3 — Tests (spec-first per §8)
-    - [ ] `init_spec`: dispatch (link line follows incl. link-inside-task
+    - [x] `init_spec`: dispatch (link line follows incl. link-inside-task
       priority proof, task line cycles, prose line falls back = cursor
       down, no notify); `nav_link` next/prev incl. same-line skip,
       multi-line, silent at ends, invalid-arg assert
-    - [ ] `idempotency_spec`: 3 commands + 3 `<Plug>` mapargs
-    - [ ] ftplugin spec: fixture-graph page gets buffer-local
-      `<CR>`/`[o`/`]o`; non-graph markdown file gets none (check
-      `minimal_init.lua` enables filetype plugins; else explicit
-      `:runtime` in the spec)
+    - [x] `idempotency_spec`: 3 commands + 3 `<Plug>` mapargs
+    - [x] ftplugin spec: fixture-graph page gets buffer-local
+      `<CR>`/`[o`/`]o` (+ functional follow/nav proofs, no-clobber
+      proof); non-graph markdown file gets none (explicit `:runtime`)
   - M9.4 — Docs + verify
     - [ ] README + `doc/logseq.txt` smart-action section (order,
       fallback, bindings, override recipe, no-folding note)

@@ -47,11 +47,17 @@ describe('idempotency (M4)', function()
       'LogseqTodos',
       'LogseqTodosView',
       'LogseqCycleTodo',
+      'LogseqSmartAction',
+      'LogseqNextLink',
+      'LogseqPrevLink',
     }) do
       assert.are.equal(2, vim.fn.exists(':' .. name))
     end
     assert.are_not.equal('', vim.fn.maparg('<Plug>(LogseqFollow)', 'n'))
     assert.are_not.equal('', vim.fn.maparg('<Plug>(LogseqCycleTodo)', 'n'))
+    assert.are_not.equal('', vim.fn.maparg('<Plug>(LogseqSmartAction)', 'n'))
+    assert.are_not.equal('', vim.fn.maparg('<Plug>(LogseqNextLink)', 'n'))
+    assert.are_not.equal('', vim.fn.maparg('<Plug>(LogseqPrevLink)', 'n'))
   end)
 
   it('repeated open_lazy() leaves a single write-guard autocmd pair', function()
