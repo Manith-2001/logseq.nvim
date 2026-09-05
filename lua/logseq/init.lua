@@ -490,4 +490,28 @@ function M.todos_view(opts)
   return buf
 end
 
+--- Cycle the TODO marker on the cursor line (M8.3): rotates the marker
+--- through config.todo_cycles and writes the line back with one
+--- nvim_buf_set_lines (single undo step, cursor kept). Works in any
+--- modifiable buffer, not just graph files. Silent on success; WARNs when
+--- the buffer is not modifiable or the line is not a cyclable task.
+function M.cycle_todo()
+  local buf = vim.api.nvim_get_current_buf()
+  if not vim.bo[buf].modifiable then
+    vim.notify('logseq.nvim: buffer is not modifiable', vim.log.levels.WARN)
+    return
+  end
+  local cur = vim.api.nvim_win_get_cursor(0)
+  local row, col = cur[1], cur[2]
+  local lines = vim.api.nvim_buf_get_lines(buf, row - 1, row, false)
+  local newline =
+    require('logseq.tasks').cycle_line(lines[1], require('logseq.config').get().todo_cycles)
+  if newline == nil then
+    vim.notify('logseq.nvim: no cyclable task on current line', vim.log.levels.WARN)
+    return
+  end
+  vim.api.nvim_buf_set_lines(buf, row - 1, row, false, { newline })
+  pcall(vim.api.nvim_win_set_cursor, 0, { row, math.min(col, #newline) })
+end
+
 return M

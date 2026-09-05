@@ -18,6 +18,7 @@ cmd('LogseqGraphs', 'switch_graph', { desc = 'Logseq: switch active graph' })
 cmd('LogseqGraph', 'graph_view', { desc = 'Logseq: explore page links', nargs = '?' })
 cmd('LogseqTodos', 'todos', { desc = 'Logseq: list tasks (picker)' })
 cmd('LogseqTodosView', 'todos_view', { desc = 'Logseq: list tasks (scratch buffer)' })
+cmd('LogseqCycleTodo', 'cycle_todo', { desc = 'Logseq: cycle TODO state on current line' })
 
 -- <Plug> mapping only; never steal gf/<leader> unconditionally.
 -- Suggested user bind (README, M3): vim.keymap.set('n', 'gf', '<Plug>(LogseqFollow)')
@@ -25,4 +26,12 @@ if vim.fn.hasmapto('<Plug>(LogseqFollow)', 'n') == 0 then
   vim.keymap.set('n', '<Plug>(LogseqFollow)', function()
     require('logseq').follow_link()
   end, { silent = true, desc = 'Logseq: follow link under cursor' })
+end
+-- No default key for cycling (repo convention, plus most terminals send
+-- Ctrl+Enter as plain Enter). Suggested binds (README, M8):
+-- GUI: vim.keymap.set('n', '<C-CR>', '<Plug>(LogseqCycleTodo)')
+if vim.fn.hasmapto('<Plug>(LogseqCycleTodo)', 'n') == 0 then
+  vim.keymap.set('n', '<Plug>(LogseqCycleTodo)', function()
+    require('logseq').cycle_todo()
+  end, { silent = true, desc = 'Logseq: cycle TODO state on current line' })
 end
