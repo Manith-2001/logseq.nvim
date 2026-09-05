@@ -6,8 +6,9 @@ with Logseq's dangling-ref semantics (a missing page opens as an empty buffer;
 no file is created until you add content and `:w`).
 
 Scope: file graphs (`pages/*.md`, `journals/*.md`) only. Logseq DB graphs
-(`*.sqlite`), block refs, queries, and toggling task states are out of
-scope (read-only TODO lists are built in, see below).
+(`*.sqlite`), block refs, and queries are out of scope. TODO lists are
+read-only except single-line state cycling (`:LogseqCycleTodo`, one
+line at a time — no multi-line cycling, no timestamps/LOGBOOK).
 
 Several file graphs are supported: point `graphs_dirs` at parent
 directories and switch between the discovered graphs with
@@ -50,18 +51,21 @@ Then `:helptags ALL` (once, so `:help logseq` works) and `:checkhealth logseq`.
 | `:LogseqGraph [title]` | Explore a page's links (Linked + Backlinks) in a scratch buffer |
 | `:LogseqTodos`       | Pick a `- TODO` task via Telescope and jump to its line   |
 | `:LogseqTodosView`   | See all tasks grouped by file (`<CR>` jumps, `q` closes)  |
+| `:LogseqCycleTodo`   | Cycle the `- MARKER` on the cursor line to its next state |
 
-Only `<Plug>(LogseqFollow)` is provided — no keys are bound by default.
-Suggested opt-in bind:
+Only `<Plug>(LogseqFollow)` and `<Plug>(LogseqCycleTodo)` are provided —
+no keys are bound by default. Suggested opt-in binds:
 
 ```lua
 vim.keymap.set('n', 'gf', '<Plug>(LogseqFollow)')
+-- GUI/kitty only: most terminals send Ctrl+Enter as plain Enter.
+vim.keymap.set('n', '<C-CR>', '<Plug>(LogseqCycleTodo)')
 ```
 
 Lua API mirrors the commands: `require('logseq').find_files()`,
 `.follow_link()`, `.today()`, `.new_page(title)`, `.switch_graph()`,
 `.graph_view(opts)` (`{title=, depth=1|2, root=}`), `.todos()`,
-`.todos_view()` (`{root=}`).
+`.todos_view()` (`{root=}`), `.cycle_todo()`.
 
 ## Configuration
 
@@ -76,6 +80,15 @@ Lua API mirrors the commands: `require('logseq').find_files()`,
   graphs_depth = 2,            -- how deep to scan under each dir
   graph_depth = 1,             -- :LogseqGraph explorer depth (1 or 2 hops)
   graph_max_files = 2000,      -- max files indexed synchronously (else warns)
+  todo_cycles = {              -- :LogseqCycleTodo marker rotation
+    { 'TODO', 'DOING', 'DONE' },
+    { 'LATER', 'NOW', 'DONE' },
+    { 'IN-PROGRESS', 'DONE' },
+    { 'WAIT', 'TODO' },
+    { 'WAITING', 'TODO' },
+    { 'CANCELLED', 'TODO' },
+    { 'CANCELED', 'TODO' },
+  },
 }
 ```
 
@@ -90,7 +103,21 @@ block (uppercase markers only, `-`/`*` bullets) with `DONE` /
 `CANCELLED` last; choosing jumps to the task's line. `:LogseqTodosView`
 shows the same list grouped by file in a read-only scratch buffer
 (`<CR>` jumps, `q` closes, re-running reuses the buffer). Both are
-jump-only v1: marking tasks done comes later. No new config keys.
+jump-only v1. `:LogseqCycleTodo` rotates the `- MARKER` on the cursor
+line through `todo_cycles` (default `TODO → DOING → DONE`, wrapping
+`DONE → TODO`; first chain wins, so `LATER → NOW → DONE` rejoins the
+main chain at `DONE`). A marker in no chain warns and leaves the line
+alone. It works in any modifiable buffer, edits in a single undo step,
+and keeps the cursor. Custom chains replace the defaults wholesale
+(same precedence as everything else: defaults < `vim.g.logseq` <
+`setup(opts)`):
+
+```lua
+vim.g.logseq = { todo_cycles = { { 'TODO', 'DONE' } } } -- skip DOING
+```
+
+Malformed chains (empty, non-string entries) are skipped at cycle time
+and reported by `:checkhealth logseq`, never hard errors.
 
 Unknown keys are not errors; `:checkhealth logseq` reports them.
 

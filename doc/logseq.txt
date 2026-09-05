@@ -29,9 +29,10 @@ semantics (following a missing page opens an empty buffer; no file is
 created until you add content and write).
 
 Scope (v0.1): file graphs only (`pages/*.md`, `journals/*.md`).
-Logseq DB graphs (`*.sqlite`), block refs, queries, and toggling task
-states are out of scope (read-only TODO lists are built in, see
-|logseq-todos|). See README.md for the milestone plan.
+Logseq DB graphs (`*.sqlite`), block refs, and queries are out of
+scope. TODO lists are read-only except single-line state cycling
+(|:LogseqCycleTodo|, one line at a time — no multi-line cycling, no
+timestamps/LOGBOOK). See README.md for the milestone plan.
 
 ==============================================================================
 2. REQUIREMENTS                                  *logseq-requirements*
@@ -74,6 +75,8 @@ After install, run `:helptags ALL` once so this help is indexed, then
 - `:LogseqTodos` .......... pick a `- TODO` task and jump to its line.
 - `:LogseqTodosView` ...... see all tasks grouped by file in a scratch
   buffer (see |logseq-todos|).
+- `:LogseqCycleTodo` ...... cycle the `- MARKER` on the cursor line to
+  its next state (see |logseq-todos|).
 
 Markdown buffers inside a graph get buffer-local treatment only
 (`b:logseq_root` is set, hard tabs are kept literal for Logseq-style
@@ -131,20 +134,29 @@ unless you map them (see |logseq-mappings|).
     an empty graph warns instead of opening a picker.
     See |logseq-todos|.
 
-                                                       *:LogseqTodosView*
+                                                        *:LogseqTodosView*
 :LogseqTodosView
     Show the same task list grouped by file in a read-only
     `filetype=logseq-todos` scratch buffer. Buffer-local keys:
     `<CR>` jumps to the task under the cursor, `q` closes.
     Re-running reuses the single view buffer. See |logseq-todos|.
 
+                                                       *:LogseqCycleTodo*
+:LogseqCycleTodo
+    Cycle the `- MARKER` on the cursor line to its next state per
+    |logseq-config| `todo_cycles`. Works in any modifiable buffer
+    (warns otherwise); warns and leaves the line alone when it is
+    not a cyclable task. Silent on success. See |logseq-todos|.
+
 ==============================================================================
 6. MAPPINGS                                          *logseq-mappings*
 
-Only `<Plug>(LogseqFollow)` is provided; no key is bound by default.
-Suggested opt-in bind (e.g. scoped to graph buffers, or global at
-your discretion): >lua
+Only `<Plug>(LogseqFollow)` and `<Plug>(LogseqCycleTodo)` are
+provided; no key is bound by default. Suggested opt-in binds (e.g.
+scoped to graph buffers, or global at your discretion): >lua
     vim.keymap.set('n', 'gf', '<Plug>(LogseqFollow)')
+    -- GUI/kitty only: most terminals send Ctrl+Enter as plain Enter.
+    vim.keymap.set('n', '<C-CR>', '<Plug>(LogseqCycleTodo)')
 <
 
 ==============================================================================
@@ -161,10 +173,24 @@ All keys, with defaults: >lua
       graphs_depth = 2,        -- how deep to scan under each dir
       graph_depth = 1,         -- :LogseqGraph explorer depth (1 or 2)
       graph_max_files = 2000,  -- max files indexed synchronously
+      todo_cycles = {          -- :LogseqCycleTodo marker rotation
+        { 'TODO', 'DOING', 'DONE' },
+        { 'LATER', 'NOW', 'DONE' },
+        { 'IN-PROGRESS', 'DONE' },
+        { 'WAIT', 'TODO' },
+        { 'WAITING', 'TODO' },
+        { 'CANCELLED', 'TODO' },
+        { 'CANCELED', 'TODO' },
+      },
     }
 <
 Set via `vim.g.logseq` or `require('logseq').setup(opts)`.
 Unknown keys are not errors; they are reported by |:checkhealth|.
+`todo_cycles` replaces the defaults wholesale (no per-index merge),
+with the usual precedence: defaults < `vim.g.logseq` <
+`setup(opts)`. Malformed chains (empty, non-string entries) are
+skipped at cycle time and reported by |:checkhealth| (warn-only),
+never hard errors. See |logseq-todos| for the rotation rules.
 
 Root resolution order (see |logseq-multigraph|): explicit per-call
 `opts.root`, then the current buffer's graph (a buffer inside a graph
@@ -180,8 +206,8 @@ nothing rather than guessing), then the working directory.
 effective graph and the step that resolved it (`buffer:…` / `active:…` /
 `graph_path` / `auto:…`), a warning when the stored active-graph entry
 went stale, graph readability, `pages/` + `journals/` presence,
-Telescope availability (warn-only), and unknown config keys
-(warn-only).
+Telescope availability (warn-only), unknown config keys
+(warn-only), and malformed `todo_cycles` chains (warn-only).
 
 ==============================================================================
 9. SEMANTICS                                        *logseq-semantics*
@@ -277,5 +303,26 @@ in `b:logseq_todos`). Buffer-local keys: `<CR>` jumps to the task
 under the cursor, `q` closes; re-running reuses the single view
 buffer. No new |logseq-config| keys; root resolution reuses the
 standard order (buffer → active → `graph_path` → cwd).
+
+CYCLING                                                       *logseq-cycle*
+
+|:LogseqCycleTodo| rotates the `- MARKER` on the cursor line through
+the |logseq-config| `todo_cycles` chains and writes it back in a
+single undo step (cursor kept, silent on success). It works in any
+modifiable buffer — not just graph files — and is the only
+state-changing TODO operation (the picker and view stay jump-only).
+
+Rotation rules: the marker advances to the next entry of the first
+chain containing it; the last entry wraps to the first (so `DONE`
+becomes `TODO` again — states are never stripped to bare text).
+First chain wins: with the defaults, `LATER → NOW → DONE` rejoins
+the main chain at `DONE`, and a further cycle yields `TODO`.
+A marker in no chain warns (`no cyclable task`) and leaves the line
+alone; non-task lines and non-modifiable buffers warn likewise.
+Indent, bullet (`-`/`*`), and the task text are preserved
+byte-for-byte. Example custom chains (wholesale replacement): >lua
+    vim.g.logseq = { todo_cycles = { { 'TODO', 'DONE' } } } -- skip DOING
+<
+Multi-line cycling and timestamps/LOGBOOK are out of scope for v1.
 
    vim:tw=78:ts=8:ft=help:norl:
