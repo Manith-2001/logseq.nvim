@@ -49,7 +49,7 @@ describe('logseq.blink source (M10.3)', function()
 
   it('completes the cursor prefix through the core (no blink needed)', function()
     edit_graph_file('mlflow')
-    vim.api.nvim_buf_set_lines(0, 0, -1, false, { '[[ml' })
+    vim.api.nvim_buf_set_lines(0, 0, -1, false, { '[[ml ' })
     vim.api.nvim_win_set_cursor(0, { 1, 4 })
     local got = nil
     blink_src.new():get_completions({}, function(response)

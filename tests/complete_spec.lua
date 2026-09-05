@@ -194,7 +194,10 @@ describe('complete.omnifunc (M10.1)', function()
   end)
 
   it('returns the 0-based prefix col on findstart', function()
-    use_buf({ '[[ml' })
+    -- Trailing space: normal-mode set_cursor clamps past-EOL, but
+    -- insert-mode EOL sits one past the last char; this reproduces the
+    -- exact insert-mode (line, col) without changing the context.
+    use_buf({ '[[ml ' })
     vim.api.nvim_win_set_cursor(0, { 1, 4 })
     assert.are.equal(2, complete.omnifunc(1, ''))
   end)
@@ -207,7 +210,7 @@ describe('complete.omnifunc (M10.1)', function()
     table.insert(tmps, root)
     vim.cmd('edit ' .. vim.fn.fnameescape(root .. '/pages/mlflow.md'))
     table.insert(scratch, vim.api.nvim_get_current_buf())
-    vim.api.nvim_buf_set_lines(0, 0, -1, false, { '[[ml' })
+    vim.api.nvim_buf_set_lines(0, 0, -1, false, { '[[ml ' })
     vim.api.nvim_win_set_cursor(0, { 1, 4 })
     assert.are.same({ { word = 'mlflow', menu = '● page' } }, complete.omnifunc(0, 'ml'))
   end)

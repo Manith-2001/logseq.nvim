@@ -692,13 +692,24 @@ Chosen because `plenary.nvim` is already installed — zero new dependencies.
       `tests/blink_spec.lua` with stubbed callbacks, no frameworks
       in CI
   - M10.4 — Docs + health + verify
-    - [ ] README + `doc/logseq.txt` completion section
-    - [ ] Health completion line
-    - [ ] `make ci` green; `stylua --check` clean; manual on a
-      scratch graph only (never real graphs): `[[` pops all,
-      `[[ml` narrows, `<CR>` confirms without `]]]]`, `#tag`
-      completes, dangling shows `○ new`, `completion_auto=false`
-      leaves manual `<C-x><C-o>` working, nvim-cmp end-to-end
+    - [x] README `## Completion` + `doc/logseq.txt` §14
+      `*logseq-completion*` (config keys in both; health §8 and
+      mappings §6 cross-ref)
+    - [x] Health completion line (auto gate, limit, engines) +
+      `tests/health_spec.lua`
+    - [x] `make ci` green (16 files, 255 assertions);
+      `stylua --check` clean; scripted matrix on a scratch graph
+      only (never real graphs): `[[` pops all, `[[ml` narrows,
+      accept-sim keeps a single `]]`, `#tag` completes, dangling
+      shows `○ new`, `completion_auto=false` leaves manual
+      `<C-x><C-o>` working, health reports completion
+    - [x] nvim-cmp end-to-end against the real framework (register
+      → availability → triggers → wrapper complete → `mlflow`
+      entry; scripts in `/var/folders/.../T/m10_*`, not committed).
+      Not scriptable headless: visible popup + auto-popup keyfeed
+      timing (no insert mode) — 30-second live check left for a
+      real session; blink covered by parity units per the locked
+      cmp-only decision
 - **Verify:** `make ci` green (existing + ~25 new specs); manual per
   M10.4 on a scratch graph; real graphs untouched (reads only —
   accepting a completion writes text into the buffer, never a file).
