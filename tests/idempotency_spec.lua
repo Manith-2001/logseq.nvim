@@ -37,7 +37,13 @@ describe('idempotency (M4)', function()
     local plugin = repo .. '/plugin/logseq.lua'
     vim.cmd('source ' .. vim.fn.fnameescape(plugin))
     vim.cmd('source ' .. vim.fn.fnameescape(plugin))
-    for _, name in ipairs({ 'LogseqFind', 'LogseqFollow', 'LogseqToday', 'LogseqNew' }) do
+    for _, name in ipairs({
+      'LogseqFind',
+      'LogseqFollow',
+      'LogseqToday',
+      'LogseqNew',
+      'LogseqGraphs',
+    }) do
       assert.are.equal(2, vim.fn.exists(':' .. name))
     end
     assert.are_not.equal('', vim.fn.maparg('<Plug>(LogseqFollow)', 'n'))

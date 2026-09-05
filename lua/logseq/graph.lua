@@ -106,14 +106,37 @@ local function clean_line(raw)
   return (line ~= '' and line or nil)
 end
 
---- Resolve the graph root. Order: explicit `config.graph_path` (strict —
---- a configured-but-missing path returns nil rather than silently using
---- some other graph) → upward search from startpath (default: current
---- buffer, else cwd). Returns nil when nothing is found.
----@param startpath string|nil file or dir to search upward from
+--- Resolve the graph root (M5.3 order):
+--- 1. explicit per-call opts.root — handled by init.resolve_root, not here.
+--- 2. buffer walk-up — the location sits inside a graph root. An explicit
+---    startpath asks about that location; otherwise the current buffer is
+---    used, and it wins even when graph_path is set (precedent:
+---    after/ftplugin already ignores graph_path via find_root_from).
+--- 3. active graph, if set and still a valid root.
+--- 4. graph_path, strict as today: set-but-missing returns nil, skipping
+---    the cwd fallback (no silent fallback).
+--- 5. cwd walk-up (only when graph_path is unset).
+---@param startpath string|nil file or dir to walk up from (default: buffer)
 ---@return string|nil absolute root path
 function M.find_root(startpath)
   local cfg = config.get()
+  local start = startpath
+  if start == nil or start == '' then
+    local bufname = vim.api.nvim_buf_get_name(0)
+    if bufname ~= '' then
+      start = bufname
+    end
+  end
+  if type(start) == 'string' and start ~= '' then
+    local hit = walk_up(start, cfg.pages_dir, cfg.journals_dir)
+    if hit then
+      return hit
+    end
+  end
+  local active = M.get_active()
+  if active then
+    return active
+  end
   if type(cfg.graph_path) == 'string' and cfg.graph_path ~= '' then
     local norm = normalize(cfg.graph_path)
     if vim.fn.isdirectory(norm) == 1 then
@@ -121,15 +144,7 @@ function M.find_root(startpath)
     end
     return nil
   end
-  if startpath == nil or startpath == '' then
-    local bufname = vim.api.nvim_buf_get_name(0)
-    if bufname ~= '' then
-      startpath = bufname
-    else
-      startpath = vim.fn.getcwd()
-    end
-  end
-  return walk_up(startpath, cfg.pages_dir, cfg.journals_dir)
+  return walk_up(vim.fn.getcwd(), cfg.pages_dir, cfg.journals_dir)
 end
 
 --- Nearest graph root at-or-above path, ignoring config.graph_path.
@@ -301,6 +316,19 @@ function M.get_active()
     active_path = nil
   end
   return active_path
+end
+
+--- Raw state-file entry without validation (for health, M5.4): the stored
+--- line, or nil when there is no state file / it is blank. An entry that
+--- is present but differs from get_active() went stale (graph moved or
+--- deleted) and is being ignored — health surfaces it so it can be reset.
+---@return string|nil
+function M.state_entry()
+  local file = state_file()
+  if vim.fn.filereadable(file) == 1 then
+    return clean_line(vim.fn.readfile(file)[1])
+  end
+  return nil
 end
 
 --- Forget the active graph (memory + state file). No-op when unset.

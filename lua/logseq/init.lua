@@ -1,4 +1,5 @@
---- Public facade. M1: find_files(); M2: follow_link(); M3: today()/new_page().
+--- Public facade. M1: find_files(); M2: follow_link(); M3: today()/new_page();
+--- M5.3: switch_graph().
 local config = require('logseq.config')
 
 local M = {}
@@ -9,7 +10,8 @@ function M.setup(opts)
   return config.setup(opts)
 end
 
---- Shared root resolution: opts.root wins (tests), else graph.find_root().
+--- Shared root resolution (M5.3 order): opts.root (explicit per call) →
+--- buffer walk-up → active graph → graph_path (strict) → cwd walk-up.
 --- Notifies + returns nil when no root is found.
 ---@param opts table
 ---@return string|nil
@@ -18,7 +20,7 @@ local function resolve_root(opts)
   local root = (type(opts.root) == 'string' and opts.root ~= '') and opts.root or graph.find_root()
   if not root then
     vim.notify(
-      'logseq.nvim: graph root not found (set graph_path or open a file inside the graph)',
+      'logseq.nvim: graph root not found (set graph_path, pick :LogseqGraphs, or open a file inside the graph)',
       vim.log.levels.ERROR
     )
     return nil
@@ -44,7 +46,8 @@ end
 
 --- Find/open pages + journals via Telescope (vim.ui.select fallback).
 --- opts.root overrides root resolution (used by tests); otherwise
---- graph.find_root() applies (config.graph_path, else upward search).
+--- graph.find_root() applies (buffer → active → graph_path → cwd).
+--- The picker title shows the graph name so the scope is visible.
 ---@param opts table|nil
 function M.find_files(opts)
   opts = opts or {}
@@ -58,7 +61,7 @@ function M.find_files(opts)
     return
   end
   require('logseq.telescope').pick(items, {
-    prompt_title = 'Logseq Pages',
+    prompt_title = ('Logseq Pages — %s'):format(vim.fn.fnamemodify(root, ':t')),
     on_choice = function(item)
       vim.cmd('edit ' .. vim.fn.fnameescape(item.path))
     end,
@@ -69,7 +72,7 @@ end
 --- Opens lazily via page.open_lazy: missing pages open as empty buffers
 --- and no file is created until content is written (dangling refs).
 --- opts.root overrides root resolution (used by tests); otherwise
---- graph.find_root() applies (config.graph_path, else upward search).
+--- graph.find_root() applies (buffer → active → graph_path → cwd).
 ---@param opts table|nil
 function M.follow_link(opts)
   opts = opts or {}
@@ -155,6 +158,69 @@ function M.new_page(title, opts)
     end
     page.open_lazy(page.title_to_path(root, input))
   end)
+end
+
+--- Pick the active graph (M5.3, multi-graph switching) via Telescope
+--- (vim.ui.select fallback). Items = graph_path ∪ discovered roots ∪ the
+--- current active (so an override is listed — and clearable — even when it
+--- came from outside the picker), shown as `name — path` so basename
+--- collisions stay distinguishable; matched internally by path. The `(auto)`
+--- entry clears the override back to plain resolution. Choosing sets +
+--- persists (INFO notify); with nothing to offer, warns and hints at
+--- graphs_dirs instead of opening a picker.
+--- A stale graph_path stays listed and errors loudly on selection
+--- (strictness: misconfiguration must not silently resolve elsewhere).
+function M.switch_graph()
+  local graph = require('logseq.graph')
+  local cfg = config.get()
+  local items = {}
+  local seen = {}
+  local function offer(name, path)
+    local key = path or '(auto)'
+    if not seen[key] then
+      seen[key] = true
+      table.insert(items, {
+        title = path and ('%s — %s'):format(name, path) or '(auto) — resolve automatically',
+        kind = path and 'graph' or 'auto',
+        name = name,
+        path = path,
+      })
+    end
+  end
+  if type(cfg.graph_path) == 'string' and cfg.graph_path ~= '' then
+    local norm = vim.fn.fnamemodify(vim.fn.expand(cfg.graph_path), ':p'):gsub('/+$', '')
+    if norm == '' then
+      norm = '/'
+    end
+    offer(vim.fn.fnamemodify(norm, ':t'), norm)
+  end
+  for _, known in ipairs(graph.discover_graphs()) do
+    offer(known.name, known.path)
+  end
+  local active = graph.get_active()
+  if active then
+    offer(vim.fn.fnamemodify(active, ':t'), active)
+  end
+  if #items == 0 then
+    vim.notify(
+      'logseq.nvim: no graphs found (set graphs_dirs to scan for graphs)',
+      vim.log.levels.WARN
+    )
+    return
+  end
+  offer('(auto)', nil)
+  require('logseq.telescope').pick(items, {
+    prompt_title = 'Logseq Graphs',
+    on_choice = function(choice)
+      if choice.path == nil then
+        graph.clear_active()
+        vim.notify('logseq.nvim: active graph cleared (auto)', vim.log.levels.INFO)
+        return
+      end
+      graph.set_active(choice.path)
+      vim.notify(('logseq.nvim: active graph: %s'):format(choice.name), vim.log.levels.INFO)
+    end,
+  })
 end
 
 return M

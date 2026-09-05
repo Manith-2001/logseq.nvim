@@ -10,8 +10,11 @@ describe('config lazy vim.g.logseq merge (M1 bugfix)', function()
     saved_g = vim.g.logseq
     vim.g.logseq = nil
     config._reset()
+    -- One test here calls graph.find_root (M5.3: consults active state).
+    graph._set_state_file(vim.fn.tempname())
   end)
   after_each(function()
+    graph._set_state_file(nil)
     vim.g.logseq = saved_g
     config._reset()
   end)

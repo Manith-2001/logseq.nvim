@@ -1,5 +1,6 @@
 local logseq = require('logseq')
 local config = require('logseq.config')
+local graph = require('logseq.graph')
 
 local repo = vim.fn.fnamemodify(debug.getinfo(1, 'S').source:sub(2), ':p:h:h')
 local fixture = repo .. '/tests/fixtures/graph'
@@ -15,6 +16,7 @@ describe('follow_link (M2)', function()
     vim.g.logseq = nil
     config._reset()
     config.setup({ graph_path = fixture })
+    graph._set_state_file(vim.fn.tempname()) -- hermetic: no real active graph
     notes = {}
     orig_notify = vim.notify
     vim.notify = function(msg, level)
@@ -25,6 +27,7 @@ describe('follow_link (M2)', function()
   end)
   after_each(function()
     vim.notify = orig_notify
+    graph._set_state_file(nil)
     for _, b in ipairs(bufs) do
       pcall(vim.api.nvim_buf_delete, b, { force = true })
     end
@@ -105,11 +108,17 @@ local function m3_harness()
   H.orig_notify = vim.notify
   H.orig_input = vim.ui.input
   H.config = require('logseq.config')
+  H.graph = require('logseq.graph')
+  H.tele = require('logseq.telescope')
   function H.setup()
     -- Hermetic: minimal_init.lua pre-seeds vim.g.logseq; clear per test.
     H.saved_g = vim.g.logseq
     vim.g.logseq = nil
     H.config._reset()
+    H.graph._set_state_file(vim.fn.tempname()) -- no real active graph
+    -- minimal_init puts telescope.nvim on the rtp, so pick() would take
+    -- the real Telescope branch headless; tests stub the pick boundary.
+    H.orig_pick = H.tele.pick
     vim.notify = function(msg, level)
       table.insert(H.notes, { msg = msg, level = level })
     end
@@ -118,6 +127,8 @@ local function m3_harness()
   function H.teardown()
     vim.notify = H.orig_notify
     vim.ui.input = H.orig_input
+    H.tele.pick = H.orig_pick
+    H.graph._set_state_file(nil)
     for _, b in ipairs(H.bufs) do
       pcall(vim.api.nvim_buf_delete, b, { force = true })
     end
@@ -313,5 +324,157 @@ describe('new_page (M3)', function()
     end
     logseq.new_page({ root = root })
     assert.are.equal(buf, vim.api.nvim_get_current_buf())
+  end)
+end)
+
+describe('resolution order end-to-end (M5.3)', function()
+  local H
+  before_each(function()
+    H = m3_harness()
+    H.setup()
+  end)
+  after_each(function()
+    H.teardown()
+  end)
+
+  -- Current buffer inside a graph: home first so :edit never hits E37.
+  local function edit_in(path)
+    H.home()
+    vim.cmd('edit ' .. vim.fn.fnameescape(path))
+    H.track_current()
+  end
+
+  it('opts.root wins over buffer, active, and graph_path', function()
+    local a = H.tmpgraph()
+    local b = H.tmpgraph()
+    local c = H.tmpgraph()
+    local d = H.tmpgraph()
+    config.setup({ graph_path = a })
+    graph.set_active(c)
+    edit_in(b .. '/pages/A.md')
+    logseq.today({ root = d, date = '2026_08_27' })
+    H.track_current()
+    assert.are.equal(vim.fn.resolve(d) .. '/journals/2026_08_27.md', vim.api.nvim_buf_get_name(0))
+  end)
+
+  it('buffer wins end-to-end in today()', function()
+    local a = H.tmpgraph()
+    local b = H.tmpgraph()
+    config.setup({ graph_path = a })
+    edit_in(b .. '/pages/A.md')
+    logseq.today({ date = '2026_08_27' })
+    H.track_current()
+    assert.are.equal(vim.fn.resolve(b) .. '/journals/2026_08_27.md', vim.api.nvim_buf_get_name(0))
+  end)
+
+  it('active graph resolves today() when the buffer is outside', function()
+    local a = H.tmpgraph()
+    local b = H.tmpgraph()
+    config.setup({ graph_path = a })
+    graph.set_active(b)
+    H.home()
+    logseq.today({ date = '2026_08_27' })
+    H.track_current()
+    assert.are.equal(vim.fn.resolve(b) .. '/journals/2026_08_27.md', vim.api.nvim_buf_get_name(0))
+  end)
+
+  it('find_files titles the picker with the graph name', function()
+    local b = H.tmpgraph()
+    vim.fn.writefile({ '- x' }, b .. '/pages/A.md') -- the picker needs a page
+    edit_in(b .. '/pages/A.md')
+    local prompt
+    H.tele.pick = function(_, opts)
+      prompt = opts.prompt_title
+    end
+    logseq.find_files()
+    assert.are.equal('Logseq Pages — ' .. vim.fn.fnamemodify(b, ':t'), prompt)
+  end)
+end)
+
+describe('switch_graph (M5.3)', function()
+  local H
+  before_each(function()
+    H = m3_harness()
+    H.setup()
+  end)
+  after_each(function()
+    H.teardown()
+  end)
+
+  local function paths_of(items)
+    local paths = {}
+    for _, item in ipairs(items) do
+      table.insert(paths, item.path or '(auto)')
+    end
+    return paths
+  end
+
+  -- Plain scan dir (not itself a graph) holding one discovered graph.
+  local function scandir(name)
+    local scan = vim.fn.tempname()
+    table.insert(H.tmps, scan)
+    vim.fn.mkdir(scan .. '/' .. name .. '/pages', 'p')
+    vim.fn.mkdir(scan .. '/' .. name .. '/journals', 'p')
+    return scan, scan .. '/' .. name
+  end
+
+  it('offers graph_path + discovered + (auto), sets the choice', function()
+    local a = H.tmpgraph()
+    local scan, beta = scandir('beta')
+    config.setup({ graph_path = a, graphs_dirs = { scan }, graphs_depth = 1 })
+    local seen
+    H.tele.pick = function(items, opts)
+      seen = items
+      for _, item in ipairs(items) do
+        if item.path == beta then
+          opts.on_choice(item)
+          return
+        end
+      end
+      error('discovered graph missing from picker')
+    end
+    logseq.switch_graph()
+    assert.are.same({ a, beta, '(auto)' }, paths_of(seen))
+    assert.is_true(seen[3].title:find('(auto)', 1, true) ~= nil)
+    assert.are.equal(beta, graph.get_active())
+    assert.is_true(H.notified(vim.log.levels.INFO, 'active graph: beta'))
+  end)
+
+  it('(auto) clears the override, which stays listed while set', function()
+    local b = H.tmpgraph()
+    graph.set_active(b)
+    H.tele.pick = function(items, opts)
+      for _, item in ipairs(items) do
+        if item.path == nil then
+          opts.on_choice(item)
+          return
+        end
+      end
+      error('(auto) entry missing')
+    end
+    logseq.switch_graph()
+    assert.is_nil(graph.get_active())
+    assert.is_true(H.notified(vim.log.levels.INFO, 'cleared'))
+  end)
+
+  it('empty discovery with no graph_path warns without opening a picker', function()
+    local opened = false
+    H.tele.pick = function()
+      opened = true
+    end
+    logseq.switch_graph()
+    assert.is_false(opened)
+    assert.is_true(H.notified(vim.log.levels.WARN, 'graphs_dirs'))
+  end)
+
+  it('selecting a stale graph_path errors loudly', function()
+    config.setup({ graph_path = '/tmp/no-such-logseq-graph-xyz' })
+    H.tele.pick = function(items, opts)
+      opts.on_choice(items[1]) -- the graph_path entry
+    end
+    assert.has_error(function()
+      logseq.switch_graph()
+    end)
+    assert.is_nil(graph.get_active())
   end)
 end)
