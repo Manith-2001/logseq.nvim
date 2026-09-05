@@ -46,8 +46,8 @@ Then `:helptags ALL` (once, so `:help logseq` works) and `:checkhealth logseq`.
 | `:LogseqToday`       | Open today's journal (`journals/YYYY_MM_DD.md`)           |
 | `:LogseqNew [title]` | Open a page; prompts for the title when omitted           |
 | `:LogseqGraphs`      | Pick the active graph (multi-graph switching, see below)  |
-| `:LogseqGraph [title]` | Explore a page's links (Linked + Backlinks) in a scratch buffer |
-| `:LogseqGraphAll` | Overview of the whole graph (counts + picker to any page's local view) |
+| `:LogseqGraph [title]` | Explore a page's links (Outgoing + Incoming tree, block context) in a scratch buffer |
+| `:LogseqGraphAll` | Overview of the whole graph (counts; `<CR>` drills into a page's local view) |
 
 Only `<Plug>(LogseqFollow)` is provided — no keys are bound by default.
 Suggested opt-in bind:
@@ -80,15 +80,37 @@ Lua API mirrors the commands: `require('logseq').find_files()`,
 The explorer centers on the given title, the current `pages/*` /
 `journals/*` buffer, or a prompt. `●` = the target file exists,
 `○` = dangling (opens lazily, nothing written until content + `:w`).
-Buffer keys: `<CR>` / `gf` open the entry, `q` closes, `r` refreshes,
-`1` / `2` set depth, `T` toggles dangling entries.
+
+`:LogseqGraph` renders the center page as a tree — outgoing links,
+backlink sources with the exact blocks that link here, and (at depth
+2) everything two hops away grouped by the page it hangs off:
+
+```
+# Machine Learning · notes_logseq (depth 1)
+
+## Outgoing (2)
+├─ ● Deep Learning
+└─ ○ Future Topic
+
+## Incoming (1)
+└─ ● AI Overview
+   ├─ "…uses [[Machine Learning]] for ranking…" → AI Overview:12
+   └─ more=4
+```
+
+Long blocks are trimmed (~80 cols) and capped at 3 rows per source
+(`more=N` covers the rest). Buffer keys: `<CR>` / `gf` open the entry
+(a context row jumps to the exact `Source:lnum` line), `q` closes, `r`
+refreshes, `1` / `2` set depth, `T` toggles dangling entries.
 
 `:LogseqGraphAll` renders the whole graph instead: a stats header plus
 `Pages` / `Journals` / `Dangling` sections with per-entry link counts
 (`● A →1 ←1` = one out-link, one backlink; `○` dangling shows
 backlinks only), so hubs, orphans, and dangling refs are visible at a
-glance. Same keys, except `1` / `2` are replaced by `P`, which picks a
-page (Telescope, `vim.ui.select` fallback) and opens its local view.
+glance. Same keys, except `<CR>` / `gf` drill down into the entry's
+local view (where its edges are visible) and `1` / `2` are replaced by
+`P`, which picks a page (Telescope, `vim.ui.select` fallback) and
+opens its local view.
 
 Unknown keys are not errors; `:checkhealth logseq` reports them.
 
