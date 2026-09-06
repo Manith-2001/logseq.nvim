@@ -70,6 +70,18 @@ local function report_graphs(cfg)
   end
   if vim.fn.filereadable(root .. '/logseq/config.edn') == 1 then
     vim.health.ok('logseq/config.edn found (file graph)')
+    -- The implementation never parses :file-name-format (verbatim titles
+    -- only, see the Semantics docs); a graph declaring a non-default
+    -- format may resolve or create the wrong files, so surface it loudly.
+    for _, line in ipairs(vim.fn.readfile(root .. '/logseq/config.edn')) do
+      if line:find(':file-name-format', 1, true) then
+        vim.health.warn(
+          'graph declares :file-name-format; logseq.nvim maps titles verbatim '
+            .. '(unsupported format: pages may resolve or create wrong files)'
+        )
+        break
+      end
+    end
   else
     vim.health.warn('logseq/config.edn not found under graph root')
   end
@@ -77,22 +89,27 @@ end
 
 function M.check()
   vim.health.start('logseq')
-  if vim.fn.has('nvim-0.10') == 1 then
+  if vim.fn.has('nvim-0.12') == 1 then
     vim.health.ok(('nvim %s'):format(vim.fn.execute('version'):match('NVIM v(%S+)') or '?'))
   else
-    vim.health.error('requires Neovim >= 0.10 (0.12 tested)')
+    vim.health.error('requires Neovim >= 0.12')
   end
   local ok, cfg_mod = pcall(require, 'logseq.config')
   if not ok then
     vim.health.error('logseq.config failed to load: ' .. tostring(cfg_mod))
     return
   end
-  -- setup() is merge-only/idempotent; picks up vim.g.logseq when the user
-  -- skipped an explicit setup() call.
-  cfg_mod.setup()
+  -- Read-only: diagnostics never mutate configuration (audit CFG-01).
+  -- get() layers defaults < vim.g.logseq < setup(opts) on its own, so no
+  -- merge is needed here; unknown keys are derived from both layers.
   local cfg = cfg_mod.get()
   for _, k in ipairs(cfg_mod.unknown_keys()) do
     vim.health.warn('unknown config key: ' .. k)
+  end
+  -- CFG-02 counterpart: wrongly-typed values (usually via vim.g.logseq)
+  -- are validated read-only here; setup() enforces its own opts.
+  for _, problem in ipairs(cfg_mod.validate(cfg)) do
+    vim.health.error('invalid config value: ' .. problem)
   end
   -- Malformed todo_cycles entries are skipped by the cycler (M8); surface
   -- them here so a typo'd chain doesn't fail silently.

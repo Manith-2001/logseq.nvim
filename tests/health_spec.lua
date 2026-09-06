@@ -49,12 +49,31 @@ describe('health.check (M10.4)', function()
   end)
 
   it('reflects completion_auto=false', function()
-    -- Via vim.g.logseq: check() re-runs setup() bare, which replaces
-    -- setup()-given opts but keeps the g: layer.
+    -- Via vim.g.logseq: check() reads get() directly; the g: layer wins
+    -- over defaults without any setup() call.
     vim.g.logseq = { completion_auto = false }
     health.check()
     local lines = infos('completion:')
     assert.are.equal(1, #lines)
     assert.is_not_nil(lines[1]:find('auto-popup off', 1, true))
+  end)
+
+  it('does not mutate setup()-provided configuration (CFG-01)', function()
+    config._reset()
+    config.setup({ completion_limit = 11 })
+    health.check()
+    assert.are.equal(11, config.get().completion_limit)
+  end)
+
+  it('reports invalid config values read-only (CFG-02)', function()
+    vim.g.logseq = { completion_limit = 'many' }
+    health.check()
+    local found = false
+    for _, c in ipairs(calls) do
+      if c.level == 'error' and c.msg:find('completion_limit', 1, true) then
+        found = true
+      end
+    end
+    assert.is_true(found)
   end)
 end)
