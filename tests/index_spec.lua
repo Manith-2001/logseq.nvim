@@ -203,3 +203,60 @@ describe('index accessors (M6.1)', function()
     assert.are.same({ 'A', 'B', 'C' }, index.titles(idx))
   end)
 end)
+
+describe('index io report + guarded build (IO-01/PERF-01)', function()
+  local saved_g
+  local tmps
+  before_each(function()
+    saved_g = vim.g.logseq
+    vim.g.logseq = nil
+    config._reset()
+    tmps = {}
+  end)
+  after_each(function()
+    for _, t in ipairs(tmps) do
+      vim.fn.delete(t, 'rf')
+    end
+    vim.g.logseq = saved_g
+    config._reset()
+  end)
+
+  it('build() reports unreadable files in idx.io.unreadable', function()
+    local root = vim.fn.tempname()
+    table.insert(tmps, root)
+    vim.fn.mkdir(root .. '/pages', 'p')
+    vim.fn.writefile({ '- [[A]]' }, root .. '/pages/A.md')
+    vim.fn.writefile({ '- [[B]]' }, root .. '/pages/B.md')
+    local ok = pcall(vim.fn.setfperm, root .. '/pages/B.md', '---------')
+    local idx = index.build(root)
+    if ok and vim.fn.filereadable(root .. '/pages/B.md') == 0 then
+      assert.are.same({}, idx.forward['B'])
+      assert.are.same({ root .. '/pages/B.md' }, idx.io.unreadable)
+    else
+      assert.are.equal(0, #idx.io.unreadable) -- running as root: skip
+    end
+  end)
+
+  it('build_guarded() refuses graphs over graph_max_files without building', function()
+    local root = vim.fn.tempname()
+    table.insert(tmps, root)
+    vim.fn.mkdir(root .. '/pages', 'p')
+    vim.fn.writefile({ '- x' }, root .. '/pages/A.md')
+    vim.fn.writefile({ '- x' }, root .. '/pages/B.md')
+    config.setup({ graph_max_files = 1 })
+    local idx, err = index.build_guarded(root)
+    assert.is_nil(idx)
+    assert.are.equal('too_large', err.kind)
+    assert.are.equal(2, err.count)
+    assert.are.equal(1, err.max)
+    assert.are.equal(
+      'logseq.nvim: graph too large (2 files > 1 graph_max_files); raise graph_max_files to explore it',
+      index.too_large_message(err.count, err.max)
+    )
+    config.setup({ graph_max_files = 2 })
+    idx, err = index.build_guarded(root)
+    assert.is_not_nil(idx)
+    assert.is_nil(err)
+    assert.are.equal(0, #idx.io.unreadable)
+  end)
+end)
