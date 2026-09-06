@@ -141,6 +141,25 @@ describe('tasks.scan (M7.1)', function()
     vim.fn.mkdir(root, 'p')
     assert.are.same({}, tasks.scan(root))
   end)
+
+  it('reports unreadable files instead of hiding them (IO-01)', function()
+    local root = vim.fn.tempname()
+    vim.fn.mkdir(root .. '/pages', 'p')
+    vim.fn.writefile({ '- TODO readable' }, root .. '/pages/A.md')
+    vim.fn.writefile({ '- TODO hidden' }, root .. '/pages/B.md')
+    local ok = pcall(vim.fn.setfperm, root .. '/pages/B.md', '---------')
+    if ok and vim.fn.filereadable(root .. '/pages/B.md') == 0 then
+      local found, report = tasks.scan(root)
+      assert.are.equal(1, #found)
+      assert.are.same({ root .. '/pages/B.md' }, report.unreadable)
+    else
+      -- Running as root: permissions do not apply, skip the IO branch.
+      local found, report = tasks.scan(root)
+      assert.are.equal(2, #found)
+      assert.is_nil(report)
+    end
+    vim.fn.delete(root, 'rf')
+  end)
 end)
 
 describe('tasks.cycle_status (M8.2)', function()

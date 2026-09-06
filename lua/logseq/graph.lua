@@ -172,7 +172,9 @@ end
 ---@param opts table|nil {pages_dir=, journals_dir=} overrides
 ---@return LogseqPageItem[]
 function M.list_pages(root, opts)
-  opts = opts or {}
+  if type(opts) ~= 'table' then
+    opts = {}
+  end
   local cfg = config.get()
   local items = {}
   local function scan(sub, kind)

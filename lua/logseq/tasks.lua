@@ -8,6 +8,8 @@
 --- M8.2 core: cycle_status() + cycle_line() (pure, chains as params).
 local M = {}
 
+local markers = require('logseq.markers')
+
 ---@class LogseqTask
 ---@field status string task marker, e.g. 'TODO'
 ---@field text string remainder of the block after the marker
@@ -15,22 +17,6 @@ local M = {}
 ---@field lnum integer 1-based line number
 ---@field title string page title (filename stem)
 ---@field kind string 'page' | 'journal'
-
-local OPEN = {
-  TODO = true,
-  NOW = true,
-  LATER = true,
-  DOING = true,
-  ['IN-PROGRESS'] = true,
-  WAIT = true,
-  WAITING = true,
-}
-
-local DONE_GROUP = {
-  DONE = true,
-  CANCELLED = true,
-  CANCELED = true,
-}
 
 --- Parse one line into (status, text). Non-task lines and non-string
 --- input yield nil. Blank text after the marker is not a task.
@@ -47,7 +33,9 @@ function M.parse_line(line)
   if marker == nil or rest == nil then
     return nil, nil
   end
-  if not OPEN[marker] and not DONE_GROUP[marker] then
+  -- Canonical vocabulary only (DRY-03): the marker set is owned by
+  -- logseq.markers, shared with scan grouping and chain validation.
+  if not markers.is_canonical(marker) then
     return nil, nil
   end
   local text = rest:match('^%s*(.-)%s*$')
@@ -112,21 +100,26 @@ end
 --- Scan root for tasks via graph.list_pages() + per-file readfile
 --- (same shape as index.build). Missing dirs scan as empty, never an
 --- error. Sorted: open statuses first (file-then-line), DONE-group last.
+--- Unreadable files are skipped BUT reported (audit IO-01): the second
+--- return is nil when everything was readable, else
+--- { unreadable = { path, ... } } — interactive callers decide whether
+--- to warn; pure callers may ignore it.
 ---@param root string absolute graph root
 ---@param opts table|nil {pages_dir=, journals_dir=} overrides, used by tests
----@return LogseqTask[]
+---@return LogseqTask[] found tasks (possibly partial)
+---@return table|nil report {unreadable = string[]}
 function M.scan(root, opts)
   assert(type(root) == 'string' and root ~= '', 'tasks.scan: root required')
   local graph = require('logseq.graph')
-  local ok, items = pcall(graph.list_pages, root, opts)
-  if not ok or type(items) ~= 'table' then
-    return {}
-  end
+  local items = graph.list_pages(root, opts)
   local open = {}
   local done = {}
+  local unreadable = {}
   for _, item in ipairs(items) do
     local ok_read, lines = pcall(vim.fn.readfile, item.path)
-    if ok_read and type(lines) == 'table' then
+    if not ok_read or type(lines) ~= 'table' then
+      table.insert(unreadable, item.path)
+    else
       for lnum, line in ipairs(lines) do
         local status, text = M.parse_line(line)
         if status ~= nil then
@@ -138,7 +131,7 @@ function M.scan(root, opts)
             title = item.title,
             kind = item.kind,
           }
-          if DONE_GROUP[status] then
+          if markers.is_done(status) then
             table.insert(done, task)
           else
             table.insert(open, task)
@@ -157,7 +150,11 @@ function M.scan(root, opts)
   for _, task in ipairs(done) do
     table.insert(out, task)
   end
-  return out
+  local report = nil
+  if #unreadable > 0 then
+    report = { unreadable = unreadable }
+  end
+  return out, report
 end
 
 return M
