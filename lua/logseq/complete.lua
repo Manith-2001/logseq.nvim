@@ -199,7 +199,7 @@ end
 --- Complete prefix against the graph: fresh list_pages() titles plus the
 --- cached dangling titles from index.build(), existing ranked before
 --- dangling. Graphs over graph_max_files fall back to pages only (one
---- WARN per root, like guard_size). opts.root overrides root resolution
+--- WARN per root, like the graph explorers). opts.root overrides root resolution
 --- (used by tests); opts.items injects items directly (used by tests);
 --- opts.limit truncates after ranking (the config completion_limit
 --- arrives this way). Nil-safe.

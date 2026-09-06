@@ -18,17 +18,21 @@ local M = {}
 ---@field name string basename of the root dir (display only; matched by path)
 ---@field path string absolute root path
 
---- Normalize to an absolute path without trailing slash. Expands `~`
---- so the documented `graph_path = '~/dev/notes_logseq'` style works.
+--- Normalize to an absolute path without trailing slash. Expands `~` so
+--- the documented `graph_path = '~/dev/notes_logseq'` style works.
+--- Public since the audit (DRY-04): the facade's graph listing used an
+--- inline copy — picker identity must equal discovery/persistence identity.
 ---@param dir string
 ---@return string
-local function normalize(dir)
+function M.normalize_path(dir)
   local abs = vim.fn.fnamemodify(vim.fn.expand(dir), ':p'):gsub('/+$', '')
   if abs == '' then
     return '/'
   end
   return abs
 end
+
+local normalize = M.normalize_path
 
 --- True when dir looks like a file-graph root: has logseq/config.edn,
 --- or pages/ + journals/ siblings.

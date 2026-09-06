@@ -166,6 +166,20 @@ local function m3_harness()
     end
     return false
   end
+  function H.buf_lines(buf)
+    return vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  end
+  function H.find_line(buf, text)
+    for i, line in ipairs(H.buf_lines(buf)) do
+      if line == text then
+        return i
+      end
+    end
+    return nil
+  end
+  function H.contains(buf, text)
+    return H.find_line(buf, text) ~= nil
+  end
   return H
 end
 
@@ -707,6 +721,21 @@ describe('todos_view scratch buffer (M7.3)', function()
     assert.is_nil(logseq.todos_view())
     assert.are.equal(buf, vim.api.nvim_get_current_buf())
     assert.is_true(H.notified(vim.log.levels.ERROR, 'graph root not found'))
+  end)
+
+  it('warns about unreadable files while still listing the readable ones (IO-01)', function()
+    local root = H.tmpgraph()
+    vim.fn.writefile({ '- TODO readable' }, root .. '/pages/A.md')
+    vim.fn.writefile({ '- TODO hidden' }, root .. '/pages/B.md')
+    local ok = pcall(vim.fn.setfperm, root .. '/pages/B.md', '---------')
+    if ok and vim.fn.filereadable(root .. '/pages/B.md') == 0 then
+      local buf = logseq.todos_view({ root = root })
+      assert.is_not_nil(buf)
+      H.track_current()
+      assert.is_true(H.notified(vim.log.levels.WARN, 'unreadable'))
+      assert.is_false(H.contains(buf, '- [TODO] 1: hidden'))
+      assert.is_true(H.contains(buf, '- [TODO] 1: readable'))
+    end
   end)
 end)
 

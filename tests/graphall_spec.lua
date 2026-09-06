@@ -1,4 +1,5 @@
 local view = require('logseq.view')
+local gv = require('logseq.graph_view')
 local index_mod = require('logseq.index')
 local config = require('logseq.config')
 local graph = require('logseq.graph')
@@ -6,22 +7,6 @@ local logseq = require('logseq')
 
 local repo = vim.fn.fnamemodify(debug.getinfo(1, 'S').source:sub(2), ':p:h:h')
 local fixture = repo .. '/tests/fixtures/graph'
-
-describe('view.entry_title with counts (M6.3)', function()
-  it('strips global-view count suffixes back to titles', function()
-    assert.are.equal('A', view.entry_title('● A →1 ←1'))
-    assert.are.equal('B', view.entry_title('● B →1 ←0'))
-    assert.are.equal('World', view.entry_title('○ World ←1'))
-    assert.are.equal('a b', view.entry_title('● a b →0 ←3'))
-  end)
-
-  it('still parses plain local-view entries', function()
-    assert.are.equal('B', view.entry_title('● B'))
-    assert.are.equal('World', view.entry_title('○ World'))
-    assert.is_nil(view.entry_title('# graph · graph overview'))
-    assert.is_nil(view.entry_title('2 pages · 1 journals · 1 dangling · 2 edges'))
-  end)
-end)
 
 describe('view.all_lines pure layout (M6.3)', function()
   local saved_g
@@ -96,6 +81,22 @@ describe('view.all_lines pure layout (M6.3)', function()
       '## Dangling (0)',
       '(none)',
     }, lines)
+  end)
+
+  it('all_lines_with_map maps counted entry lines back to their titles', function()
+    local idx = index_mod.build(fixture)
+    local lines, map = view.all_lines_with_map(idx, { graph_name = 'graph' })
+    for i, line in ipairs(lines) do
+      if line == '● A →1 ←1' then
+        assert.are.same(
+          { title = 'A', path = fixture .. '/pages/A.md', exists = true },
+          map[tostring(i)]
+        )
+      end
+      if line == '○ World ←1' then
+        assert.are.same({ title = 'World', path = nil, exists = false }, map[tostring(i)])
+      end
+    end
   end)
 end)
 
@@ -198,7 +199,7 @@ describe('view.open_all buffer behavior (M6.3)', function()
   it('opens a global scratch buffer with kind=all state and content', function()
     local root = H.tmpgraph({ A = { '- [[B]]' }, B = { '- lone' } })
     H.home()
-    local buf = view.open_all({ root = root })
+    local buf = gv.open_all({ root = root })
     H.track_current()
     assert.are.equal('logseq-graph', vim.bo[buf].filetype)
     assert.are.equal('nofile', vim.bo[buf].buftype)
@@ -216,7 +217,7 @@ describe('view.open_all buffer behavior (M6.3)', function()
   it('binds P for the picker and no depth keys', function()
     local root = H.tmpgraph({ A = { '- [[B]]' }, B = { '- lone' } })
     H.home()
-    local buf = view.open_all({ root = root })
+    local buf = gv.open_all({ root = root })
     H.track_current()
     local descs = {}
     for _, map in ipairs(vim.api.nvim_buf_get_keymap(buf, 'n')) do
@@ -231,17 +232,17 @@ describe('view.open_all buffer behavior (M6.3)', function()
   it('jump opens counted entries, existing and dangling', function()
     local root = H.tmpgraph({ A = { '- [[B]] and [[Missing M63]]' }, B = { '- lone' } })
     H.home()
-    local buf = view.open_all({ root = root })
+    local buf = gv.open_all({ root = root })
     H.track_current()
     vim.api.nvim_win_set_cursor(0, { H.find_line(buf, '● B →0 ←1'), 0 })
-    view.jump()
+    gv.jump()
     H.track_current()
     assert.are.equal(vim.fn.resolve(root) .. '/pages/B.md', vim.api.nvim_buf_get_name(0))
     -- The overview wiped itself on :edit (bufhidden=wipe); reopen for part two.
-    buf = view.open_all({ root = root })
+    buf = gv.open_all({ root = root })
     H.track_current()
     vim.api.nvim_win_set_cursor(0, { H.find_line(buf, '○ Missing M63 ←1'), 0 })
-    view.jump()
+    gv.jump()
     H.track_current()
     local name = vim.api.nvim_buf_get_name(0)
     assert.are.equal(vim.fn.resolve(root) .. '/pages/Missing M63.md', name)
@@ -251,24 +252,24 @@ describe('view.open_all buffer behavior (M6.3)', function()
   it('refresh and toggle_dangling work on the global buffer', function()
     local root = H.tmpgraph({ A = { '- [[Missing M63]]' } })
     H.home()
-    local buf = view.open_all({ root = root })
+    local buf = gv.open_all({ root = root })
     H.track_current()
     assert.is_true(H.contains(buf, '○ Missing M63 ←1'))
-    assert.is_false(view.toggle_dangling(buf))
+    assert.is_false(gv.toggle_dangling(buf))
     assert.is_true(H.contains(buf, '## Dangling (0)'))
-    assert.is_true(view.toggle_dangling(buf))
+    assert.is_true(gv.toggle_dangling(buf))
     vim.fn.writefile({ '- lone' }, root .. '/pages/C.md')
-    view.refresh(buf)
+    gv.refresh(buf)
     assert.is_true(H.contains(buf, '● C →0 ←0'))
   end)
 
   it('set_depth warns and leaves a global buffer alone', function()
     local root = H.tmpgraph({ A = { '- [[B]]' }, B = { '- lone' } })
     H.home()
-    local buf = view.open_all({ root = root })
+    local buf = gv.open_all({ root = root })
     H.track_current()
     local before = H.buf_lines(buf)
-    view.set_depth(buf, 2)
+    gv.set_depth(buf, 2)
     assert.is_true(H.notified(vim.log.levels.WARN, 'local explorer only'))
     assert.are.same(before, H.buf_lines(buf))
   end)
@@ -287,7 +288,7 @@ describe('view.pick_page (M6.3)', function()
   it('lists titles with counts and opens the local view on choice', function()
     local root = H.tmpgraph({ A = { '- [[B]]' }, B = { '- lone' } })
     H.home()
-    local buf = view.open_all({ root = root })
+    local buf = gv.open_all({ root = root })
     H.track_current()
     local seen, seen_opts
     H.tele.pick = function(items, opts)
@@ -301,7 +302,7 @@ describe('view.pick_page (M6.3)', function()
       end
       error('B missing from picker')
     end
-    view.pick_page(buf)
+    gv.pick_page(buf)
     H.track_current()
     local titles = {}
     for _, item in ipairs(seen) do
@@ -320,20 +321,20 @@ describe('view.pick_page (M6.3)', function()
   it('formats dangling items and hides them when the buffer does', function()
     local root = H.tmpgraph({ A = { '- [[Missing M63]]' } })
     H.home()
-    local buf = view.open_all({ root = root })
+    local buf = gv.open_all({ root = root })
     H.track_current()
     local seen, seen_format
     H.tele.pick = function(items, opts)
       seen, seen_format = items, opts.format_item
     end
-    view.pick_page(buf)
+    gv.pick_page(buf)
     assert.are.equal(2, #seen)
     assert.are.equal('○ Missing M63 ←1', seen_format(seen[2]))
-    view.toggle_dangling(buf) -- hide dangling, pick again
+    gv.toggle_dangling(buf) -- hide dangling, pick again
     H.tele.pick = function(items)
       seen = items
     end
-    view.pick_page(buf)
+    gv.pick_page(buf)
     assert.are.same({ 'A' }, { seen[1].title })
     assert.are.equal(1, #seen)
   end)
@@ -341,13 +342,13 @@ describe('view.pick_page (M6.3)', function()
   it('warns instead of picking from an empty graph', function()
     local root = H.tmpgraph({})
     H.home()
-    local buf = view.open_all({ root = root })
+    local buf = gv.open_all({ root = root })
     H.track_current()
     local called = false
     H.tele.pick = function()
       called = true
     end
-    view.pick_page(buf)
+    gv.pick_page(buf)
     assert.is_false(called)
     assert.is_true(H.notified(vim.log.levels.WARN, 'no pages found to pick'))
   end)
