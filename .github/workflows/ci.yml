@@ -37,3 +37,25 @@ jobs:
 
       - name: Lint (stylua)
         run: make lint
+
+  test-min:
+    # Pinned minimum supported Neovim (README/doc say 0.12+; health enforces it).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Neovim (v0.12.0 minimum supported)
+        # NOTE: same $GITHUB_PATH caveat as the stable job — absolute paths here.
+        run: |
+          curl -sL https://github.com/neovim/neovim/releases/download/v0.12.0/nvim-linux-x86_64.tar.gz | tar xz -C /tmp
+          test -x /tmp/nvim-linux-x86_64/bin/nvim
+          echo /tmp/nvim-linux-x86_64/bin >> "$GITHUB_PATH"
+          /tmp/nvim-linux-x86_64/bin/nvim --version
+
+      - name: Install plenary.nvim (test dependency)
+        run: |
+          mkdir -p ~/.local/share/nvim/site/pack/core/opt
+          git clone --depth 1 https://github.com/nvim-lua/plenary.nvim ~/.local/share/nvim/site/pack/core/opt/plenary.nvim
+
+      - name: Tests (headless plenary-busted)
+        run: make test
