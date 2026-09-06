@@ -15,8 +15,8 @@ CONTENTS                                                *logseq-contents*
   7. Configuration .................... |logseq-config|
   8. Health ........................... |logseq-health|
   9. Semantics ........................ |logseq-semantics|
-   10. Multiple graphs ................. |logseq-multigraph|
-   11. Graph explorer .................. |logseq-graphview|
+  10. Multiple graphs ................. |logseq-multigraph|
+  11. Graph explorer .................. |logseq-graphview|
   12. TODO lists ...................... |logseq-todos|
   13. Smart action .................... |logseq-smartaction|
   14. Completion ...................... |logseq-completion|
@@ -54,11 +54,16 @@ With |vim.pack| (no plugin manager needed): >lua
     -- the graph and let it auto-detect):
     vim.g.logseq = { graph_path = '~/dev/notes_logseq' }
 <
-No |logseq-setup| function call is required. `setup()` exists only to
-merge options from Lua: >lua
+No `setup()` call is required. `require('logseq').setup(opts)` exists
+only to merge options from Lua: keys present in `opts` merge over any
+previous `setup()` call and over `vim.g.logseq`; calling `setup()`
+with no arguments is a no-op. Invalid option types/values raise an
+error and leave the previous configuration untouched. Keys cannot be
+unset via `setup()` (restart to clear; |:checkhealth| shows what is
+set). Precedence, low to high: defaults < `vim.g.logseq` <
+`setup(opts)`: >lua
     require('logseq').setup({ graph_path = '~/dev/notes_logseq' })
 <
-Precedence, low to high: defaults < `vim.g.logseq` < `setup(opts)`.
 
 After install, run `:helptags ALL` once so this help is indexed, then
 |:checkhealth| `logseq` to verify the graph resolves.
@@ -74,6 +79,7 @@ After install, run `:helptags ALL` once so this help is indexed, then
   |logseq-multigraph|).
 - `:LogseqGraph [title]`  explore a page's links (Linked + Backlinks)
   in a scratch buffer (see |logseq-graphview|).
+- :LogseqGraphAll ..... overview of the whole graph (see |:LogseqGraphAll|).
 - `:LogseqTodos` .......... pick a `- TODO` task and jump to its line.
 - `:LogseqTodosView` ...... see all tasks grouped by file in a scratch
   buffer (see |logseq-todos|).
@@ -213,7 +219,6 @@ All keys, with defaults: >lua
       pages_dir = 'pages',
       journals_dir = 'journals',
       journal_format = '%Y_%m_%d', -- os.date format for journal stems
-      picker = 'telescope',    -- (vim.ui.select fallback is automatic)
       graphs_dirs = {},        -- parent dirs scanned for graphs
       graphs_depth = 2,        -- how deep to scan under each dir
       graph_depth = 1,         -- :LogseqGraph explorer depth (1 or 2)
@@ -269,12 +274,13 @@ after you add content and write. This mirrors Logseq, which deletes
 empty pages instead of keeping 0-byte files.
 
 Page titles map to filenames verbatim (spaces and case preserved):
-`Machine Learning` <-> `pages/Machine Learning.md`.
-No `___`/legacy translation is applied: the reference graph sets no
-`:file-name-format` and contains no namespace pages, so inventing one
-would diverge from Logseq. Titles containing `/` are refused with a
-warning instead of opening a buffer that could never round-trip
-(namespaces are out of scope for v0.1, see |logseq-intro|).
+`Machine Learning` <-> `pages/Machine Learning.md`. `config.edn`
+`:file-name-format` is NOT parsed: only verbatim titles are supported;
+a graph declaring a non-default format (e.g. `:triple-lowbar`) may
+resolve or create the wrong files (|:checkhealth| warns when it detects
+the setting). Titles containing `/` are refused with a warning instead
+of opening a buffer that could never round-trip (namespaces are out of
+scope for v0.1, see |logseq-intro|).
 
 ==============================================================================
 10. MULTIPLE GRAPHS                               *logseq-multigraph*
@@ -326,6 +332,43 @@ instead of stalling. Namespace targets (`[[a/b]]`) are skipped by the
 index, matching the facade's out-of-scope refusal (see
 |logseq-semantics|); self-loops list under Linked but never as their
    own backlink.
+
+==============================================================================
+12. TODO LISTS                                          *logseq-todos*
+
+`:LogseqTodos`, `:LogseqTodosView`, and `:LogseqCycleTodo` share one
+task vocabulary: uppercase Logseq markers only (`TODO`, `DOING`, `NOW`,
+`LATER`, `IN-PROGRESS`, `WAIT`, `WAITING`, `DONE`, `CANCELLED`,
+`CANCELED`), `-`/`*` bullets, one line per task. Numbered lists,
+priorities (`[#A]`), and SCHEDULED:/DEADLINE: metadata are plain text
+(out of scope for v1). All lists are read-only except single-line state
+cycling.
+
+|:LogseqCycleTodo| rotates the `- MARKER` on the cursor line through
+|logseq-config| `todo_cycles` (default `TODO -> DOING -> DONE`, wrapping
+`DONE -> TODO`; the first chain containing the marker wins, so
+`LATER -> NOW -> DONE` rejoins the main chain at DONE). A marker in no
+chain warns and leaves the line alone. It works in any modifiable
+buffer (warns otherwise), edits in a single undo step, and keeps the
+cursor. Custom chains replace the defaults wholesale and may only use
+canonical markers; other entries are skipped at cycle time and reported
+by |:checkhealth| (warn-only, never hard errors).
+
+==============================================================================
+13. SMART ACTION                                      *logseq-smartaction*
+
+|:LogseqSmartAction| (buffer-local `<CR>` in graph files) picks by
+line: a `[[link]]` / `#[[link]]` / `#tag` under the cursor is followed
+(link-first, so a link inside a `- TODO` line follows the link), else a
+`- MARKER` task line is cycled via |:LogseqCycleTodo|, else the cursor
+moves down one line (plain `<CR>` motion, silent at the last line).
+|:LogseqNextLink| / |:LogseqPrevLink| (buffer-local `]o` / `[o`) jump
+to the start of the next/previous link — strict, so a cursor sitting on
+a link moves on; silent no-ops at the ends with no wrap-around. Unlike
+obsidian.nvim there is no heading/fold handling (`za`) and no tag
+picker. To rebind, remove the buffer-local key first
+(`:nunmap <buffer> <CR>`) and map the |logseq-mappings| targets
+yourself.
 
 ==============================================================================
 14. COMPLETION                                    *logseq-completion*

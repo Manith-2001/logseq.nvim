@@ -1,10 +1,9 @@
 --- Graph root detection + page listing (M1).
---- Discovery findings (§8.1–§8.2, reference graph ~/dev/notes_logseq):
---- - No active `:file-name-format` in logseq/config.edn (only commented
----   defaults) and no namespace (`___`) files on disk → titles keep
----   spaces/case verbatim. `/` (namespace) mapping deferred to M4 per PLAN.
---- - Journals use `%Y_%m_%d` (e.g. 2026_08_27.md), matching the commented
----   default `:journal/file-name-format "yyyy_MM_dd"`.
+--- Filename semantics: `:file-name-format` in logseq/config.edn is NOT
+--- parsed; titles map to filenames verbatim (spaces/case preserved).
+--- Graphs declaring a non-default format are unsupported (health warns
+--- when it sees :file-name-format); `/` (namespace) mapping is deferred
+--- to M4 per PLAN. Journals use `%Y_%m_%d` (e.g. 2026_08_27.md).
 local config = require('logseq.config')
 
 local M = {}

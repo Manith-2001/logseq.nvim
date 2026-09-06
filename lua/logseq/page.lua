@@ -1,10 +1,7 @@
 --- Page title <-> path mapping (M1) + lazy open (M2).
 --- Escaping (finalized M4 per §8.1 finding): titles map VERBATIM
---- (spaces/case preserved). The reference graph has no active
---- `:file-name-format` (only a commented `:journal/file-name-format`),
---- zero `___` files, zero subdirs, and zero `[[a/b]]` links — so there is
---- no in-graph evidence for `___`/legacy translation, and inventing one
---- would diverge from Logseq on this graph. `/` therefore passes through
+--- (spaces/case preserved) — `:file-name-format` is not parsed, verbatim
+--- only. `/` therefore passes through
 --- at this layer (`[[a/b]]` -> `pages/a/b.md`); the UX layer
 --- (`follow_link`, `new_page`) refuses such titles with a warning since
 --- namespace pages are out of scope for v0.1 (see §2 non-goals).
