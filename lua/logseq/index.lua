@@ -10,6 +10,7 @@
 local graph = require('logseq.graph')
 local parser = require('logseq.parser')
 local config = require('logseq.config')
+local page = require('logseq.page')
 
 local M = {}
 
@@ -39,12 +40,6 @@ function M.normalize(text)
     return nil
   end
   return name
-end
-
----@param title string
----@return boolean true when the title is namespace-scoped (contains `/`)
-local function is_namespace(title)
-  return title:find('/', 1, true) ~= nil
 end
 
 --- Read one file's lines. Unreadable files return nil + err instead of a
@@ -92,7 +87,7 @@ local function build_from(items)
       for _, line in ipairs(lines) do
         for _, link in ipairs(parser.links_in_line(line)) do
           local target = M.normalize(link.text)
-          if target ~= nil and not is_namespace(target) then
+          if target ~= nil and not page.is_namespace(target) then
             fwd_sets[item.title][target] = true
           end
         end

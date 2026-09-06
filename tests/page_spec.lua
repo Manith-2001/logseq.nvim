@@ -129,3 +129,21 @@ describe('page.open_lazy (M2)', function()
     assert.is_nil(vim.b[buf].logseq_dangling)
   end)
 end)
+
+describe('namespace policy owner (DRY-01)', function()
+  it('is_namespace detects slashes and is nil-safe', function()
+    assert.is_true(page.is_namespace('a/b'))
+    assert.is_true(page.is_namespace('/lead'))
+    assert.is_false(page.is_namespace('Machine Learning'))
+    assert.is_false(page.is_namespace(''))
+    assert.is_false(page.is_namespace(nil))
+    assert.is_false(page.is_namespace(42))
+  end)
+
+  it('namespace_notice carries the canonical refusal wording', function()
+    assert.are.equal(
+      'logseq.nvim: namespace pages like [[a/b]] are out of scope for v0.1',
+      page.namespace_notice('a/b')
+    )
+  end)
+end)

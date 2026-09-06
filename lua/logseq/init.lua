@@ -43,14 +43,12 @@ end
 --- Namespace guard (M4, see §2 non-goals + §8.1 finding): titles containing
 --- `/` map to subpaths that Logseq namespaces own. v0.1 refuses them with a
 --- warning instead of opening a buffer that could never round-trip.
+--- The predicate + notice text are owned by logseq.page (DRY-01).
 ---@param title string
 ---@return boolean true when the title is namespace-free
 local function check_no_namespace(title)
-  if title:find('/', 1, true) then
-    vim.notify(
-      ('logseq.nvim: namespace pages like [[%s]] are out of scope for v0.1'):format(title),
-      vim.log.levels.WARN
-    )
+  if require('logseq.page').is_namespace(title) then
+    vim.notify(require('logseq.page').namespace_notice(title), vim.log.levels.WARN)
     return false
   end
   return true
