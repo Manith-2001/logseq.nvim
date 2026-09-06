@@ -246,7 +246,13 @@ describe('graph.discover_graphs (M5.1)', function()
 
   it('returns {} for empty, missing, or invalid scan config', function()
     assert.are.same({}, graph.discover_graphs()) -- defaults: graphs_dirs = {}
-    config.setup({ graphs_dirs = { '/tmp/no-such-logseq-graph-xyz', '', 42 } })
+    -- CFG-02: invalid setup opts now raise fail-fast (previously silently
+    -- accepted and scanned as empty). Invalid g: layer still scans as empty
+    -- via discover_graphs' defensive skip.
+    assert.has_error(function()
+      config.setup({ graphs_dirs = { '/tmp/no-such-logseq-graph-xyz', '', 42 } })
+    end)
+    vim.g.logseq = { graphs_dirs = { '/tmp/no-such-logseq-graph-xyz', '', 42 } }
     assert.are.same({}, graph.discover_graphs())
   end)
 end)
