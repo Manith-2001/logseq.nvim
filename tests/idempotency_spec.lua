@@ -44,6 +44,7 @@ describe('idempotency (M4)', function()
       'LogseqNew',
       'LogseqSwitchGraph',
       'LogseqGraph',
+      'LogseqGraphAll',
       'LogseqTodos',
       'LogseqTodosView',
       'LogseqCycleTodo',
@@ -58,6 +59,13 @@ describe('idempotency (M4)', function()
     assert.are_not.equal('', vim.fn.maparg('<Plug>(LogseqSmartAction)', 'n'))
     assert.are_not.equal('', vim.fn.maparg('<Plug>(LogseqNextLink)', 'n'))
     assert.are_not.equal('', vim.fn.maparg('<Plug>(LogseqPrevLink)', 'n'))
+  end)
+
+  it('defines <Plug> targets even when a consumer maps them early (API-01)', function()
+    vim.keymap.set('n', 'gf', '<Plug>(LogseqFollow)')
+    vim.cmd('source ' .. vim.fn.fnameescape(repo .. '/plugin/logseq.lua'))
+    assert.are_not_equal('', vim.fn.maparg('<Plug>(LogseqFollow)', 'n'))
+    vim.keymap.del('n', 'gf')
   end)
 
   it('repeated open_lazy() leaves a single write-guard autocmd pair', function()

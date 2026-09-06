@@ -60,7 +60,10 @@ vim.api.nvim_create_autocmd('DirChanged', {
 
 -- <Plug> mapping only; never steal gf/<leader> unconditionally.
 -- Suggested user bind (README, M3): vim.keymap.set('n', 'gf', '<Plug>(LogseqFollow)')
-if vim.fn.hasmapto('<Plug>(LogseqFollow)', 'n') == 0 then
+-- API-01: guard on the exact <Plug> left-hand side (maparg), never on
+-- hasmapto() — a consumer mapping gf -> <Plug>(...) before this file is
+-- sourced must not suppress the target's definition.
+if vim.fn.maparg('<Plug>(LogseqFollow)', 'n') == '' then
   vim.keymap.set('n', '<Plug>(LogseqFollow)', function()
     require('logseq').follow_link()
   end, { silent = true, desc = 'Logseq: follow link under cursor' })
@@ -68,7 +71,7 @@ end
 -- No default key for cycling (repo convention, plus most terminals send
 -- Ctrl+Enter as plain Enter). Suggested binds (README, M8):
 -- GUI: vim.keymap.set('n', '<C-CR>', '<Plug>(LogseqCycleTodo)')
-if vim.fn.hasmapto('<Plug>(LogseqCycleTodo)', 'n') == 0 then
+if vim.fn.maparg('<Plug>(LogseqCycleTodo)', 'n') == '' then
   vim.keymap.set('n', '<Plug>(LogseqCycleTodo)', function()
     require('logseq').cycle_todo()
   end, { silent = true, desc = 'Logseq: cycle TODO state on current line' })
@@ -76,17 +79,17 @@ end
 -- Smart action + link navigation plugs (M9). The ftplugin maps graph
 -- buffers to these; users can also bind them anywhere themselves, e.g.
 -- vim.keymap.set('n', '<CR>', '<Plug>(LogseqSmartAction)', { buffer = true })
-if vim.fn.hasmapto('<Plug>(LogseqSmartAction)', 'n') == 0 then
+if vim.fn.maparg('<Plug>(LogseqSmartAction)', 'n') == '' then
   vim.keymap.set('n', '<Plug>(LogseqSmartAction)', function()
     require('logseq').smart_action()
   end, { silent = true, desc = 'Logseq: follow link, cycle task, or move down' })
 end
-if vim.fn.hasmapto('<Plug>(LogseqNextLink)', 'n') == 0 then
+if vim.fn.maparg('<Plug>(LogseqNextLink)', 'n') == '' then
   vim.keymap.set('n', '<Plug>(LogseqNextLink)', function()
     require('logseq').nav_link('next')
   end, { silent = true, desc = 'Logseq: jump to next link' })
 end
-if vim.fn.hasmapto('<Plug>(LogseqPrevLink)', 'n') == 0 then
+if vim.fn.maparg('<Plug>(LogseqPrevLink)', 'n') == '' then
   vim.keymap.set('n', '<Plug>(LogseqPrevLink)', function()
     require('logseq').nav_link('prev')
   end, { silent = true, desc = 'Logseq: jump to previous link' })
