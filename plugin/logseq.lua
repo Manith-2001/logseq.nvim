@@ -42,7 +42,11 @@ navcmd('LogseqPrevLink', 'prev', 'Logseq: jump to previous link')
 -- and rebuilt lazily, so any markdown write or directory change drops
 -- the cache. Idempotent via clear=true (safe to :source repeatedly).
 local complete_cache_grp = vim.api.nvim_create_augroup('LogseqCompleteCache', { clear = true })
-vim.api.nvim_create_autocmd('BufWritePost', {
+-- Named `on_event` (not `...cmd`): the docs inventory spec extracts user
+-- commands from this file with `n?cmd%('name'`, which would otherwise also
+-- match these autocmd event names.
+local on_event = vim.api.nvim_create_autocmd
+on_event('BufWritePost', {
   group = complete_cache_grp,
   pattern = '*.md',
   desc = 'Logseq: invalidate [[ ]] completion cache',
@@ -50,7 +54,7 @@ vim.api.nvim_create_autocmd('BufWritePost', {
     require('logseq.complete').invalidate()
   end,
 })
-vim.api.nvim_create_autocmd('DirChanged', {
+on_event('DirChanged', {
   group = complete_cache_grp,
   desc = 'Logseq: invalidate [[ ]] completion cache',
   callback = function()

@@ -98,73 +98,44 @@ describe('follow_link (M2)', function()
 end)
 
 -- Shared harness for the M3 facade fns: tmp graph via opts.root (hermetic,
--- no config needed), clean home buffer per test, notify capture.
+-- no config needed), clean home buffer per test, notify capture. Lifecycle
+-- delegates to tests/harness.lua; the pick boundary stays local (init_spec
+-- stubs pick to a passthrough per test — it does NOT stub vim.ui.input
+-- like the view specs). Direct H.notes/H.bufs/H.tmps uses alias the shared
+-- per-test state re-created on every setup.
+local shared_harness = require('tests.harness')
 local function m3_harness()
   local H = {}
-  H.notes = {}
-  H.bufs = {}
-  H.tmps = {}
-  H.saved_cwd = vim.fn.getcwd()
-  H.orig_notify = vim.notify
-  H.orig_input = vim.ui.input
-  H.config = require('logseq.config')
-  H.graph = require('logseq.graph')
-  H.tele = require('logseq.telescope')
+  H.config = shared_harness.config
+  H.graph = shared_harness.graph
+  H.tele = shared_harness.tele
   function H.setup()
     -- Hermetic: minimal_init.lua pre-seeds vim.g.logseq; clear per test.
-    H.saved_g = vim.g.logseq
-    vim.g.logseq = nil
-    H.config._reset()
-    H.graph._set_state_file(vim.fn.tempname()) -- no real active graph
+    shared_harness.setup()
+    H.notes = shared_harness.notes
+    H.bufs = shared_harness.bufs
+    H.tmps = shared_harness.tmps
     -- minimal_init puts telescope.nvim on the rtp, so pick() would take
     -- the real Telescope branch headless; tests stub the pick boundary.
     H.orig_pick = H.tele.pick
-    vim.notify = function(msg, level)
-      table.insert(H.notes, { msg = msg, level = level })
-    end
-    H.saved_cwd = vim.fn.getcwd()
   end
   function H.teardown()
-    vim.notify = H.orig_notify
-    vim.ui.input = H.orig_input
     H.tele.pick = H.orig_pick
-    H.graph._set_state_file(nil)
-    for _, b in ipairs(H.bufs) do
-      pcall(vim.api.nvim_buf_delete, b, { force = true })
-    end
-    for _, t in ipairs(H.tmps) do
-      vim.fn.delete(t, 'rf')
-    end
-    vim.fn.chdir(H.saved_cwd)
-    vim.g.logseq = H.saved_g
-    H.config._reset()
+    shared_harness.teardown()
   end
   -- Fresh tmp graph root with pages/ + journals/ dirs.
   function H.tmpgraph()
-    local root = vim.fn.tempname()
-    vim.fn.mkdir(root .. '/pages', 'p')
-    vim.fn.mkdir(root .. '/journals', 'p')
-    table.insert(H.tmps, root)
-    return root
+    return shared_harness.tmpgraph()
   end
   -- Clean unmodified home buffer; :edit-based opens need this.
   function H.home()
-    local buf = vim.api.nvim_create_buf(true, false)
-    table.insert(H.bufs, buf)
-    vim.api.nvim_set_current_buf(buf)
-    vim.bo[buf].modified = false
-    return buf
+    return shared_harness.home()
   end
   function H.track_current()
-    table.insert(H.bufs, vim.api.nvim_get_current_buf())
+    shared_harness.track_current()
   end
   function H.notified(level, fragment)
-    for _, n in ipairs(H.notes) do
-      if n.level == level and n.msg:find(fragment, 1, true) then
-        return true
-      end
-    end
-    return false
+    return shared_harness.notified(level, fragment)
   end
   function H.buf_lines(buf)
     return vim.api.nvim_buf_get_lines(buf, 0, -1, false)

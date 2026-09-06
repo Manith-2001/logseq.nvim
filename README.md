@@ -51,9 +51,9 @@ Then `:helptags ALL` (once, so `:help logseq` works) and `:checkhealth logseq`.
 | `:LogseqFind`        | Pick a page/journal via Telescope and open it             |
 | `:LogseqFollow`      | Open the `[[link]]`, `#[[link]]`, or `#tag` under cursor  |
 | `:LogseqToday`       | Open today's journal (`journals/YYYY_MM_DD.md`)           |
-| `:LogseqNew [title]` | Open a page; prompts for the title when omitted           |
+| `:LogseqNew` [title] | Open a page; prompts for the title when omitted           |
 | `:LogseqSwitchGraph` | Pick the active graph (multi-graph switching, see below)  |
-| `:LogseqGraph [title]` | Explore a page's links (Linked + Backlinks) in a scratch buffer |
+| `:LogseqGraph` [title] | Explore a page's links (Linked + Backlinks) in a scratch buffer |
 | `:LogseqGraphAll`   | Overview of the whole graph (counts + picker to any page's local view) |
 | `:LogseqTodos`       | Pick a `- TODO` task via Telescope and jump to its line   |
 | `:LogseqTodosView`   | See all tasks grouped by file (`<CR>` jumps, `q` closes)  |

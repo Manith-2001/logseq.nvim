@@ -93,91 +93,19 @@ describe('view.lines pure layout (M6.2)', function()
   end)
 end)
 
--- Shared harness: tmp graph, clean home buffer, notify + input capture.
-local function harness()
-  local H = {}
-  H.notes = {}
-  H.bufs = {}
-  H.tmps = {}
-  H.saved_cwd = vim.fn.getcwd()
-  H.orig_notify = vim.notify
-  H.orig_input = vim.ui.input
-  function H.setup()
-    H.saved_g = vim.g.logseq
-    vim.g.logseq = nil
-    config._reset()
-    graph._set_state_file(vim.fn.tempname()) -- no real active graph
-    vim.notify = function(msg, level)
-      table.insert(H.notes, { msg = msg, level = level })
-    end
-    vim.ui.input = function(_, cb) -- default: cancel the prompt
-      cb(nil)
-    end
-  end
-  function H.teardown()
-    vim.notify = H.orig_notify
-    vim.ui.input = H.orig_input
-    graph._set_state_file(nil)
-    for _, b in ipairs(H.bufs) do
-      pcall(vim.api.nvim_buf_delete, b, { force = true })
-    end
-    for _, t in ipairs(H.tmps) do
-      vim.fn.delete(t, 'rf')
-    end
-    vim.fn.chdir(H.saved_cwd)
-    vim.g.logseq = H.saved_g
-    config._reset()
-  end
-  function H.tmpgraph(files)
-    local root = vim.fn.tempname()
-    vim.fn.mkdir(root .. '/pages', 'p')
-    vim.fn.mkdir(root .. '/journals', 'p')
-    for name, lines in pairs(files or {}) do
-      vim.fn.writefile(lines, root .. '/pages/' .. name .. '.md')
-    end
-    table.insert(H.tmps, root)
-    return root
-  end
-  function H.home()
-    local buf = vim.api.nvim_create_buf(true, false)
-    table.insert(H.bufs, buf)
-    vim.api.nvim_set_current_buf(buf)
-    vim.bo[buf].modified = false
-    return buf
-  end
-  function H.track_current()
-    table.insert(H.bufs, vim.api.nvim_get_current_buf())
-  end
-  function H.notified(level, fragment)
-    for _, n in ipairs(H.notes) do
-      if n.level == level and n.msg:find(fragment, 1, true) then
-        return true
-      end
-    end
-    return false
-  end
-  function H.buf_lines(buf)
-    return vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-  end
-  function H.find_line(buf, text)
-    for i, line in ipairs(H.buf_lines(buf)) do
-      if line == text then
-        return i
-      end
-    end
-    return nil
-  end
-  function H.contains(buf, text)
-    return H.find_line(buf, text) ~= nil
-  end
-  return H
-end
+-- Shared lifecycle (tests/harness.lua); the view-spec policy stays local:
+-- vim.ui.input defaults to cancelling the prompt (see the before_each
+-- blocks below).
+local harness = require('tests.harness')
 
 describe('view depth-2 layout (M6.2)', function()
   local H
   before_each(function()
-    H = harness()
+    H = harness
     H.setup()
+    vim.ui.input = function(_, cb) -- default: cancel the prompt
+      cb(nil)
+    end
   end)
   after_each(function()
     H.teardown()
@@ -204,8 +132,11 @@ end)
 describe('view.open buffer behavior (M6.2)', function()
   local H
   before_each(function()
-    H = harness()
+    H = harness
     H.setup()
+    vim.ui.input = function(_, cb) -- default: cancel the prompt
+      cb(nil)
+    end
   end)
   after_each(function()
     H.teardown()
@@ -339,8 +270,11 @@ end)
 describe('graph_view facade (M6.2)', function()
   local H
   before_each(function()
-    H = harness()
+    H = harness
     H.setup()
+    vim.ui.input = function(_, cb) -- default: cancel the prompt
+      cb(nil)
+    end
   end)
   after_each(function()
     H.teardown()
@@ -470,8 +404,11 @@ end)
 describe('graph_view controller regressions (VIEW-01/PERF-01/API-02)', function()
   local H
   before_each(function()
-    H = harness()
+    H = harness
     H.setup()
+    vim.ui.input = function(_, cb) -- default: cancel the prompt
+      cb(nil)
+    end
   end)
   after_each(function()
     H.teardown()

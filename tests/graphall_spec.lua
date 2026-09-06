@@ -100,99 +100,26 @@ describe('view.all_lines pure layout (M6.3)', function()
   end)
 end)
 
--- Shared harness: tmp graph, clean home buffer, notify capture, pick stub.
-local function harness()
-  local H = {}
-  H.notes = {}
-  H.bufs = {}
-  H.tmps = {}
-  H.saved_cwd = vim.fn.getcwd()
-  H.orig_notify = vim.notify
-  H.orig_input = vim.ui.input
-  H.tele = require('logseq.telescope')
-  H.orig_pick = H.tele.pick
-  function H.setup()
-    H.saved_g = vim.g.logseq
-    vim.g.logseq = nil
-    config._reset()
-    graph._set_state_file(vim.fn.tempname()) -- no real active graph
-    vim.notify = function(msg, level)
-      table.insert(H.notes, { msg = msg, level = level })
-    end
-    vim.ui.input = function(_, cb) -- default: cancel the prompt
-      cb(nil)
-    end
-    H.tele.pick = function()
-      error('pick() called without a test stub')
-    end
-  end
-  function H.teardown()
-    vim.notify = H.orig_notify
-    vim.ui.input = H.orig_input
-    H.tele.pick = H.orig_pick
-    graph._set_state_file(nil)
-    for _, b in ipairs(H.bufs) do
-      pcall(vim.api.nvim_buf_delete, b, { force = true })
-    end
-    for _, t in ipairs(H.tmps) do
-      vim.fn.delete(t, 'rf')
-    end
-    vim.fn.chdir(H.saved_cwd)
-    vim.g.logseq = H.saved_g
-    config._reset()
-  end
-  function H.tmpgraph(files)
-    local root = vim.fn.tempname()
-    vim.fn.mkdir(root .. '/pages', 'p')
-    vim.fn.mkdir(root .. '/journals', 'p')
-    for name, lines in pairs(files or {}) do
-      vim.fn.writefile(lines, root .. '/pages/' .. name .. '.md')
-    end
-    table.insert(H.tmps, root)
-    return root
-  end
-  function H.home()
-    local buf = vim.api.nvim_create_buf(true, false)
-    table.insert(H.bufs, buf)
-    vim.api.nvim_set_current_buf(buf)
-    vim.bo[buf].modified = false
-    return buf
-  end
-  function H.track_current()
-    table.insert(H.bufs, vim.api.nvim_get_current_buf())
-  end
-  function H.notified(level, fragment)
-    for _, n in ipairs(H.notes) do
-      if n.level == level and n.msg:find(fragment, 1, true) then
-        return true
-      end
-    end
-    return false
-  end
-  function H.buf_lines(buf)
-    return vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-  end
-  function H.find_line(buf, text)
-    for i, line in ipairs(H.buf_lines(buf)) do
-      if line == text then
-        return i
-      end
-    end
-    return nil
-  end
-  function H.contains(buf, text)
-    return H.find_line(buf, text) ~= nil
-  end
-  return H
-end
+-- Shared lifecycle (tests/harness.lua); the graphall-spec policy stays
+-- local: vim.ui.input defaults to cancelling the prompt, and pick() errors
+-- without a test stub (see the before_each blocks below).
+local harness = require('tests.harness')
 
 describe('view.open_all buffer behavior (M6.3)', function()
   local H
   before_each(function()
-    H = harness()
+    H = harness
     H.setup()
+    vim.ui.input = function(_, cb) -- default: cancel the prompt
+      cb(nil)
+    end
+    H.orig_pick = H.tele.pick
+    H.tele.pick = function()
+      error('pick() called without a test stub')
+    end
   end)
   after_each(function()
+    H.tele.pick = H.orig_pick
     H.teardown()
   end)
 
@@ -278,10 +205,18 @@ end)
 describe('view.pick_page (M6.3)', function()
   local H
   before_each(function()
-    H = harness()
+    H = harness
     H.setup()
+    vim.ui.input = function(_, cb) -- default: cancel the prompt
+      cb(nil)
+    end
+    H.orig_pick = H.tele.pick
+    H.tele.pick = function()
+      error('pick() called without a test stub')
+    end
   end)
   after_each(function()
+    H.tele.pick = H.orig_pick
     H.teardown()
   end)
 
@@ -357,10 +292,18 @@ end)
 describe('graph_view_all facade (M6.3)', function()
   local H
   before_each(function()
-    H = harness()
+    H = harness
     H.setup()
+    vim.ui.input = function(_, cb) -- default: cancel the prompt
+      cb(nil)
+    end
+    H.orig_pick = H.tele.pick
+    H.tele.pick = function()
+      error('pick() called without a test stub')
+    end
   end)
   after_each(function()
+    H.tele.pick = H.orig_pick
     H.teardown()
   end)
 
