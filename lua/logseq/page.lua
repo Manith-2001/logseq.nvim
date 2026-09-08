@@ -1,10 +1,7 @@
 --- Page title <-> path mapping (M1) + lazy open (M2).
 --- Escaping (finalized M4 per §8.1 finding): titles map VERBATIM
---- (spaces/case preserved). The reference graph has no active
---- `:file-name-format` (only a commented `:journal/file-name-format`),
---- zero `___` files, zero subdirs, and zero `[[a/b]]` links — so there is
---- no in-graph evidence for `___`/legacy translation, and inventing one
---- would diverge from Logseq on this graph. `/` therefore passes through
+--- (spaces/case preserved) — `:file-name-format` is not parsed, verbatim
+--- only. `/` therefore passes through
 --- at this layer (`[[a/b]]` -> `pages/a/b.md`); the UX layer
 --- (`follow_link`, `new_page`) refuses such titles with a warning since
 --- namespace pages are out of scope for v0.1 (see §2 non-goals).
@@ -42,6 +39,25 @@ function M.journal_to_path(root, stem)
   local name = stem:match('^%s*(.-)%s*$')
   assert(name ~= '', 'page.journal_to_path: stem must not be blank')
   return root .. '/' .. config.get().journals_dir .. '/' .. name .. '.md'
+end
+
+--- Namespace support policy (DRY-01) has exactly one owner: HERE.
+--- Titles containing `/` map to subpaths that Logseq namespaces own.
+--- v0.1 refuses them with a warning instead of opening a buffer that
+--- could never round-trip. UI-facing callers (facade, graph view) format
+--- the notice below; quiet consumers (index) use the bare predicate.
+---@param title any
+---@return boolean true when the title is namespace-scoped (contains `/`)
+function M.is_namespace(title)
+  return type(title) == 'string' and title:find('/', 1, true) ~= nil
+end
+
+--- The shared refusal notice text. Keeping the wording with the policy
+--- means the facade and the graph view can never drift apart.
+---@param title string
+---@return string
+function M.namespace_notice(title)
+  return ('logseq.nvim: namespace pages like [[%s]] are out of scope for v0.1'):format(title)
 end
 
 --- True when every line of buf is blank (a dangling page with no content).

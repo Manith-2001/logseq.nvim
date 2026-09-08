@@ -1,4 +1,5 @@
 local view = require('logseq.view')
+local gv = require('logseq.graph_view')
 local index_mod = require('logseq.index')
 local config = require('logseq.config')
 local graph = require('logseq.graph')
@@ -6,23 +7,6 @@ local logseq = require('logseq')
 
 local repo = vim.fn.fnamemodify(debug.getinfo(1, 'S').source:sub(2), ':p:h:h')
 local fixture = repo .. '/tests/fixtures/graph'
-
-describe('view.entry_title (M6.2)', function()
-  it('parses entry lines back to titles', function()
-    assert.are.equal('B', view.entry_title('● B'))
-    assert.are.equal('World', view.entry_title('○ World'))
-    assert.are.equal('a b', view.entry_title('● a b'))
-  end)
-
-  it('returns nil for headers, blanks, placeholders, and junk', function()
-    assert.is_nil(view.entry_title('# A · graph (depth 1)'))
-    assert.is_nil(view.entry_title('## Linked (1)'))
-    assert.is_nil(view.entry_title(''))
-    assert.is_nil(view.entry_title('(none)'))
-    assert.is_nil(view.entry_title('- [[A]]'))
-    assert.is_nil(view.entry_title(nil))
-  end)
-end)
 
 describe('view.lines pure layout (M6.2)', function()
   local saved_g
@@ -95,93 +79,33 @@ describe('view.lines pure layout (M6.2)', function()
       '● B',
     }, view.lines(idx, 'A', 1, { graph_name = 'graph', show_dangling = false }))
   end)
+
+  it('lines_with_map maps entry lines, not headers or placeholders', function()
+    local idx = index_mod.build(fixture)
+    local lines, map = view.lines_with_map(idx, 'A', 1, { graph_name = 'graph' })
+    assert.is_nil(map['1']) -- header
+    local found = {}
+    for k, entry in pairs(map) do
+      found[entry.title] = tonumber(k)
+    end
+    assert.are.equal(4, found['World']) -- '○ World' line
+    assert.are.equal(7, found['B']) -- '● B' line
+  end)
 end)
 
--- Shared harness: tmp graph, clean home buffer, notify + input capture.
-local function harness()
-  local H = {}
-  H.notes = {}
-  H.bufs = {}
-  H.tmps = {}
-  H.saved_cwd = vim.fn.getcwd()
-  H.orig_notify = vim.notify
-  H.orig_input = vim.ui.input
-  function H.setup()
-    H.saved_g = vim.g.logseq
-    vim.g.logseq = nil
-    config._reset()
-    graph._set_state_file(vim.fn.tempname()) -- no real active graph
-    vim.notify = function(msg, level)
-      table.insert(H.notes, { msg = msg, level = level })
-    end
-    vim.ui.input = function(_, cb) -- default: cancel the prompt
-      cb(nil)
-    end
-  end
-  function H.teardown()
-    vim.notify = H.orig_notify
-    vim.ui.input = H.orig_input
-    graph._set_state_file(nil)
-    for _, b in ipairs(H.bufs) do
-      pcall(vim.api.nvim_buf_delete, b, { force = true })
-    end
-    for _, t in ipairs(H.tmps) do
-      vim.fn.delete(t, 'rf')
-    end
-    vim.fn.chdir(H.saved_cwd)
-    vim.g.logseq = H.saved_g
-    config._reset()
-  end
-  function H.tmpgraph(files)
-    local root = vim.fn.tempname()
-    vim.fn.mkdir(root .. '/pages', 'p')
-    vim.fn.mkdir(root .. '/journals', 'p')
-    for name, lines in pairs(files or {}) do
-      vim.fn.writefile(lines, root .. '/pages/' .. name .. '.md')
-    end
-    table.insert(H.tmps, root)
-    return root
-  end
-  function H.home()
-    local buf = vim.api.nvim_create_buf(true, false)
-    table.insert(H.bufs, buf)
-    vim.api.nvim_set_current_buf(buf)
-    vim.bo[buf].modified = false
-    return buf
-  end
-  function H.track_current()
-    table.insert(H.bufs, vim.api.nvim_get_current_buf())
-  end
-  function H.notified(level, fragment)
-    for _, n in ipairs(H.notes) do
-      if n.level == level and n.msg:find(fragment, 1, true) then
-        return true
-      end
-    end
-    return false
-  end
-  function H.buf_lines(buf)
-    return vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-  end
-  function H.find_line(buf, text)
-    for i, line in ipairs(H.buf_lines(buf)) do
-      if line == text then
-        return i
-      end
-    end
-    return nil
-  end
-  function H.contains(buf, text)
-    return H.find_line(buf, text) ~= nil
-  end
-  return H
-end
+-- Shared lifecycle (tests/harness.lua); the view-spec policy stays local:
+-- vim.ui.input defaults to cancelling the prompt (see the before_each
+-- blocks below).
+local harness = require('tests.harness')
 
 describe('view depth-2 layout (M6.2)', function()
   local H
   before_each(function()
-    H = harness()
+    H = harness
     H.setup()
+    vim.ui.input = function(_, cb) -- default: cancel the prompt
+      cb(nil)
+    end
   end)
   after_each(function()
     H.teardown()
@@ -208,8 +132,11 @@ end)
 describe('view.open buffer behavior (M6.2)', function()
   local H
   before_each(function()
-    H = harness()
+    H = harness
     H.setup()
+    vim.ui.input = function(_, cb) -- default: cancel the prompt
+      cb(nil)
+    end
   end)
   after_each(function()
     H.teardown()
@@ -218,7 +145,7 @@ describe('view.open buffer behavior (M6.2)', function()
   it('opens a logseq-graph scratch buffer with state and content', function()
     local root = H.tmpgraph({ A = { '- [[B]]' }, B = { '- lone' } })
     H.home()
-    local buf = view.open({ root = root, title = 'A' })
+    local buf = gv.open({ root = root, title = 'A' })
     H.track_current()
     assert.are.equal(buf, vim.api.nvim_get_current_buf())
     assert.are.equal('logseq-graph', vim.bo[buf].filetype)
@@ -238,7 +165,7 @@ describe('view.open buffer behavior (M6.2)', function()
   it('binds the explorer keys with descriptions', function()
     local root = H.tmpgraph({ A = { '- [[B]]' }, B = { '- lone' } })
     H.home()
-    local buf = view.open({ root = root, title = 'A' })
+    local buf = gv.open({ root = root, title = 'A' })
     H.track_current()
     local descs = {}
     for _, map in ipairs(vim.api.nvim_buf_get_keymap(buf, 'n')) do
@@ -259,10 +186,10 @@ describe('view.open buffer behavior (M6.2)', function()
   it('jump opens the existing page under the cursor', function()
     local root = H.tmpgraph({ A = { '- [[B]]' }, B = { '- lone' } })
     H.home()
-    local buf = view.open({ root = root, title = 'A' })
+    local buf = gv.open({ root = root, title = 'A' })
     H.track_current()
     vim.api.nvim_win_set_cursor(0, { H.find_line(buf, '● B'), 0 })
-    view.jump()
+    gv.jump()
     H.track_current()
     assert.are.equal(vim.fn.resolve(root) .. '/pages/B.md', vim.api.nvim_buf_get_name(0))
   end)
@@ -270,10 +197,10 @@ describe('view.open buffer behavior (M6.2)', function()
   it('jump opens dangling refs lazily without creating the file', function()
     local root = H.tmpgraph({ A = { '- [[Missing M62]]' } })
     H.home()
-    local buf = view.open({ root = root, title = 'A' })
+    local buf = gv.open({ root = root, title = 'A' })
     H.track_current()
     vim.api.nvim_win_set_cursor(0, { H.find_line(buf, '○ Missing M62'), 0 })
-    view.jump()
+    gv.jump()
     H.track_current()
     local name = vim.api.nvim_buf_get_name(0)
     assert.are.equal(vim.fn.resolve(root) .. '/pages/Missing M62.md', name)
@@ -284,10 +211,10 @@ describe('view.open buffer behavior (M6.2)', function()
   it('jump warns and stays put off entries', function()
     local root = H.tmpgraph({ A = { '- [[B]]' }, B = { '- lone' } })
     H.home()
-    local buf = view.open({ root = root, title = 'A' })
+    local buf = gv.open({ root = root, title = 'A' })
     H.track_current()
     vim.api.nvim_win_set_cursor(0, { 1, 0 }) -- header line
-    view.jump()
+    gv.jump()
     assert.are.equal(buf, vim.api.nvim_get_current_buf())
     assert.is_true(H.notified(vim.log.levels.WARN, 'no graph entry'))
   end)
@@ -295,47 +222,47 @@ describe('view.open buffer behavior (M6.2)', function()
   it('refresh picks up links added on disk', function()
     local root = H.tmpgraph({ A = { '- [[B]]' }, B = { '- lone' } })
     H.home()
-    local buf = view.open({ root = root, title = 'A' })
+    local buf = gv.open({ root = root, title = 'A' })
     H.track_current()
     assert.is_false(H.contains(buf, '● C'))
     vim.fn.writefile({ '- lone' }, root .. '/pages/C.md')
     vim.fn.writefile({ '- [[B]] and [[C]]' }, root .. '/pages/A.md')
-    view.refresh(buf)
+    gv.refresh(buf)
     assert.is_true(H.contains(buf, '● C'))
   end)
 
   it('set_depth toggles the 2-hops section', function()
     local root = H.tmpgraph({ A = { '- [[B]]' }, B = { '- [[C]]' }, C = { '- lone' } })
     H.home()
-    local buf = view.open({ root = root, title = 'A' })
+    local buf = gv.open({ root = root, title = 'A' })
     H.track_current()
     assert.is_false(H.contains(buf, '## 2 hops (1)'))
-    view.set_depth(buf, 2)
+    gv.set_depth(buf, 2)
     assert.is_true(H.contains(buf, '## 2 hops (1)'))
     assert.is_true(H.contains(buf, '● C'))
-    view.set_depth(buf, 1)
+    gv.set_depth(buf, 1)
     assert.is_false(H.contains(buf, '## 2 hops (1)'))
   end)
 
   it('toggle_dangling hides and restores ○ entries', function()
     local root = H.tmpgraph({ A = { '- [[Missing M62]]' } })
     H.home()
-    local buf = view.open({ root = root, title = 'A' })
+    local buf = gv.open({ root = root, title = 'A' })
     H.track_current()
     assert.is_true(H.contains(buf, '○ Missing M62'))
-    assert.is_false(view.toggle_dangling(buf))
+    assert.is_false(gv.toggle_dangling(buf))
     assert.is_false(H.contains(buf, '○ Missing M62'))
     assert.is_true(H.contains(buf, '## Linked (0)'))
-    assert.is_true(view.toggle_dangling(buf))
+    assert.is_true(gv.toggle_dangling(buf))
     assert.is_true(H.contains(buf, '○ Missing M62'))
   end)
 
   it('close deletes the explorer buffer', function()
     local root = H.tmpgraph({ A = { '- [[B]]' }, B = { '- lone' } })
     H.home()
-    local buf = view.open({ root = root, title = 'A' })
+    local buf = gv.open({ root = root, title = 'A' })
     H.track_current()
-    view.close(buf)
+    gv.close(buf)
     assert.is_false(vim.api.nvim_buf_is_valid(buf))
   end)
 end)
@@ -343,8 +270,11 @@ end)
 describe('graph_view facade (M6.2)', function()
   local H
   before_each(function()
-    H = harness()
+    H = harness
     H.setup()
+    vim.ui.input = function(_, cb) -- default: cancel the prompt
+      cb(nil)
+    end
   end)
   after_each(function()
     H.teardown()
@@ -432,7 +362,7 @@ describe('graph_view facade (M6.2)', function()
     local ok_buf = logseq.graph_view({ root = fixture, title = 'A', depth = 1 })
     assert.is_not_nil(ok_buf)
     H.track_current()
-    view.close(ok_buf)
+    gv.close(ok_buf)
     config.setup({ graph_max_files = 1 }) -- fixture holds 3 files
     assert.is_nil(logseq.graph_view({ root = fixture, title = 'A' }))
     assert.are.equal(buf, vim.api.nvim_get_current_buf())
@@ -446,7 +376,7 @@ describe('graph_view facade (M6.2)', function()
     H.track_current()
     assert.are.equal('# A · graph (depth 2)', H.buf_lines(buf)[1])
     assert.is_true(H.contains(buf, '## 2 hops (0)'))
-    view.close(buf)
+    gv.close(buf)
     config.setup({ graph_depth = 2 })
     local buf2 = logseq.graph_view({ root = fixture, title = 'A' })
     assert.is_not_nil(buf2)
@@ -468,5 +398,74 @@ describe('graph_view facade (M6.2)', function()
       '## Backlinks (1)',
       '● A',
     }, H.buf_lines(buf))
+  end)
+end)
+
+describe('graph_view controller regressions (VIEW-01/PERF-01/API-02)', function()
+  local H
+  before_each(function()
+    H = harness
+    H.setup()
+    vim.ui.input = function(_, cb) -- default: cancel the prompt
+      cb(nil)
+    end
+  end)
+  after_each(function()
+    H.teardown()
+  end)
+
+  it('jump resolves titles that literally end in count-like suffixes (VIEW-01)', function()
+    local root = H.tmpgraph({ A = { '- [[Evil ←1]]' }, ['Evil ←1'] = { '- lone' } })
+    H.home()
+    local buf = gv.open({ root = root, title = 'A' })
+    H.track_current()
+    vim.api.nvim_win_set_cursor(0, { H.find_line(buf, '● Evil ←1'), 0 })
+    gv.jump()
+    H.track_current()
+    assert.are.equal(vim.fn.resolve(root) .. '/pages/Evil ←1.md', vim.api.nvim_buf_get_name(0))
+  end)
+
+  it('render stores the line map for navigation (VIEW-01)', function()
+    local root = H.tmpgraph({ A = { '- [[B]]' }, B = { '- lone' } })
+    H.home()
+    local buf = gv.open({ root = root, title = 'A' })
+    H.track_current()
+    local st = vim.api.nvim_buf_get_var(buf, 'logseq_graph')
+    assert.are.equal('B', st.line_map[tostring(H.find_line(buf, '● B'))].title)
+    assert.is_true(st.line_map[tostring(H.find_line(buf, '● B'))].exists)
+  end)
+
+  it(
+    'refresh warns instead of stalling when the graph grew past graph_max_files (PERF-01)',
+    function()
+      local root = H.tmpgraph({ A = { '- [[B]]' }, B = { '- lone' } })
+      H.home()
+      local buf = gv.open({ root = root, title = 'A' })
+      H.track_current()
+      config.setup({ graph_max_files = 1 })
+      local before = H.buf_lines(buf)
+      gv.refresh(buf)
+      assert.are.same(before, H.buf_lines(buf))
+      assert.is_true(H.notified(vim.log.levels.WARN, 'too large'))
+      config.setup({ graph_max_files = 2000 })
+      vim.fn.writefile({ '- [[A]]' }, root .. '/pages/C.md')
+      gv.refresh(buf)
+      assert.is_true(H.contains(buf, '● C'))
+    end
+  )
+
+  it('jump with explicit lnum works while another buffer is current (API-02)', function()
+    local root = H.tmpgraph({ A = { '- [[B]]' }, B = { '- lone' } })
+    H.home()
+    local buf = gv.open({ root = root, title = 'A' })
+    H.track_current()
+    local other = vim.api.nvim_create_buf(true, false)
+    table.insert(H.bufs, other)
+    vim.cmd('split') -- keep the wipe-on-hide explorer displayed elsewhere
+    vim.api.nvim_set_current_buf(other)
+    local entry_lnum = H.find_line(buf, '● B')
+    gv.jump(buf, entry_lnum) -- explicit lnum: no implicit current-window read
+    H.track_current()
+    assert.are.equal(vim.fn.resolve(root) .. '/pages/B.md', vim.api.nvim_buf_get_name(0))
   end)
 end)

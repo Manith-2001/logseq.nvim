@@ -15,8 +15,8 @@ CONTENTS                                                *logseq-contents*
   7. Configuration .................... |logseq-config|
   8. Health ........................... |logseq-health|
   9. Semantics ........................ |logseq-semantics|
-   10. Multiple graphs ................. |logseq-multigraph|
-   11. Graph explorer .................. |logseq-graphview|
+  10. Multiple graphs ................. |logseq-multigraph|
+  11. Graph explorer .................. |logseq-graphview|
   12. TODO lists ...................... |logseq-todos|
   13. Smart action .................... |logseq-smartaction|
   14. Completion ...................... |logseq-completion|
@@ -25,7 +25,7 @@ CONTENTS                                                *logseq-contents*
 1. INTRO                                                *logseq-intro*
 
 logseq.nvim handles Logseq *file-graph* notes directly from Neovim:
-find/open pages, follow |[[links]]| under the cursor, open today's
+find/open pages, follow `[[links]]` under the cursor, open today's
 journal, and create new pages — all with Logseq's dangling-ref
 semantics (following a missing page opens an empty buffer; no file is
 created until you add content and write).
@@ -39,41 +39,47 @@ timestamps/LOGBOOK). See README.md for the milestone plan.
 ==============================================================================
 2. REQUIREMENTS                                  *logseq-requirements*
 
-- Neovim 0.12+ (uses |vim.pack|, |vim.fs.dir|, `vim.ui.input`)
-- Optional: telescope.nvim (a |vim.ui.select| fallback is used otherwise)
+- Neovim 0.12+ (uses `vim.pack`, `vim.fs.dir`, `vim.ui.input`)
+- Optional: telescope.nvim (a `vim.ui.select` fallback is used otherwise)
 - A Logseq file graph, e.g. `~/dev/notes_logseq/` with `pages/` +
   `journals/` subdirectories (or `logseq/config.edn`)
 
 ==============================================================================
 3. SETUP                                                *logseq-setup*
 
-With |vim.pack| (no plugin manager needed): >lua
+With `vim.pack` (no plugin manager needed): >lua
     vim.pack.add({ { src = 'https://github.com/Manith-2001/logseq.nvim' } })
 
     -- Tell the plugin where your graph lives (or open a file inside
     -- the graph and let it auto-detect):
     vim.g.logseq = { graph_path = '~/dev/notes_logseq' }
 <
-No |logseq-setup| function call is required. `setup()` exists only to
-merge options from Lua: >lua
+No `setup()` call is required. `require('logseq').setup(opts)` exists
+only to merge options from Lua: keys present in `opts` merge over any
+previous `setup()` call and over `vim.g.logseq`; calling `setup()`
+with no arguments is a no-op. Invalid option types/values raise an
+error and leave the previous configuration untouched. Keys cannot be
+unset via `setup()` (restart to clear; `:checkhealth` shows what is
+set). Precedence, low to high: defaults < `vim.g.logseq` <
+`setup(opts)`: >lua
     require('logseq').setup({ graph_path = '~/dev/notes_logseq' })
 <
-Precedence, low to high: defaults < `vim.g.logseq` < `setup(opts)`.
 
 After install, run `:helptags ALL` once so this help is indexed, then
-|:checkhealth| `logseq` to verify the graph resolves.
+`:checkhealth logseq` to verify the graph resolves.
 
 ==============================================================================
 4. USAGE                                                *logseq-usage*
 
 - `:LogseqFind` ......... pick a page or journal, open it.
-- `:LogseqFollow` ....... open the |[[link]]| under the cursor.
+- `:LogseqFollow` ....... open the `[[link]]` under the cursor.
 - `:LogseqToday` ........ open today's journal page.
 - `:LogseqNew [title]` .. open a page; prompts when no title is given.
 - `:LogseqSwitchGraph`  pick the active graph (see
   |logseq-multigraph|).
 - `:LogseqGraph [title]`  explore a page's links (Linked + Backlinks)
   in a scratch buffer (see |logseq-graphview|).
+- :LogseqGraphAll ..... overview of the whole graph (see |:LogseqGraphAll|).
 - `:LogseqTodos` .......... pick a `- TODO` task and jump to its line.
 - `:LogseqTodosView` ...... see all tasks grouped by file in a scratch
   buffer (see |logseq-todos|).
@@ -98,7 +104,7 @@ changed; pre-existing maps are never clobbered (see
                                                             *:LogseqFind*
 :LogseqFind
     List `pages/*.md` + `journals/*.md` via Telescope
-    (|vim.ui.select| fallback) and edit the choice.
+    (`vim.ui.select` fallback) and edit the choice.
 
                                                           *:LogseqFollow*
 :LogseqFollow
@@ -113,13 +119,13 @@ changed; pre-existing maps are never clobbered (see
 
                                                               *:LogseqNew*
 :LogseqNew [title]
-    Open `pages/<title>.md`. Prompts via |vim.ui.input| when no
+    Open `pages/<title>.md`. Prompts via `vim.ui.input` when no
     title is given; cancelling aborts quietly.
 
                                                      *:LogseqSwitchGraph*
 :LogseqSwitchGraph
     Pick the active graph (see |logseq-multigraph|) via Telescope
-    (|vim.ui.select| fallback). The `(auto)` entry clears the
+    (`vim.ui.select` fallback). The `(auto)` entry clears the
     override; choosing persists the choice and notifies.
 
                                                            *:LogseqGraph*
@@ -138,7 +144,7 @@ changed; pre-existing maps are never clobbered (see
                                                            *:LogseqTodos*
 :LogseqTodos
     List every `- TODO` task of the graph via Telescope
-    (|vim.ui.select| fallback) and jump to the choice's line
+    (`vim.ui.select` fallback) and jump to the choice's line
     (`:edit +lnum path`). The picker title shows the graph name;
     an empty graph warns instead of opening a picker.
     See |logseq-todos|.
@@ -181,7 +187,7 @@ changed; pre-existing maps are never clobbered (see
     (`● A →1 ←1` = one out-link, one backlink; `○` dangling entries
     show backlinks only). Same keys as |:LogseqGraph|, except depth
     has no meaning here: `1` / `2` are replaced by `P`, which picks a
-    page (Telescope, |vim.ui.select| fallback) and opens its local
+    page (Telescope, `vim.ui.select` fallback) and opens its local
     view. Same root resolution and `graph_max_files` guard.
 
 ==============================================================================
@@ -213,7 +219,6 @@ All keys, with defaults: >lua
       pages_dir = 'pages',
       journals_dir = 'journals',
       journal_format = '%Y_%m_%d', -- os.date format for journal stems
-      picker = 'telescope',    -- (vim.ui.select fallback is automatic)
       graphs_dirs = {},        -- parent dirs scanned for graphs
       graphs_depth = 2,        -- how deep to scan under each dir
       graph_depth = 1,         -- :LogseqGraph explorer depth (1 or 2)
@@ -232,11 +237,11 @@ All keys, with defaults: >lua
     }
 <
 Set via `vim.g.logseq` or `require('logseq').setup(opts)`.
-Unknown keys are not errors; they are reported by |:checkhealth|.
+Unknown keys are not errors; they are reported by `:checkhealth`.
 `todo_cycles` replaces the defaults wholesale (no per-index merge),
 with the usual precedence: defaults < `vim.g.logseq` <
 `setup(opts)`. Malformed chains (empty, non-string entries) are
-skipped at cycle time and reported by |:checkhealth| (warn-only),
+skipped at cycle time and reported by `:checkhealth` (warn-only),
 never hard errors. See |logseq-todos| for the rotation rules.
 
 Root resolution order (see |logseq-multigraph|): explicit per-call
@@ -269,12 +274,13 @@ after you add content and write. This mirrors Logseq, which deletes
 empty pages instead of keeping 0-byte files.
 
 Page titles map to filenames verbatim (spaces and case preserved):
-`Machine Learning` <-> `pages/Machine Learning.md`.
-No `___`/legacy translation is applied: the reference graph sets no
-`:file-name-format` and contains no namespace pages, so inventing one
-would diverge from Logseq. Titles containing `/` are refused with a
-warning instead of opening a buffer that could never round-trip
-(namespaces are out of scope for v0.1, see |logseq-intro|).
+`Machine Learning` <-> `pages/Machine Learning.md`. `config.edn`
+`:file-name-format` is NOT parsed: only verbatim titles are supported;
+a graph declaring a non-default format (e.g. `:triple-lowbar`) may
+resolve or create the wrong files (`:checkhealth` warns when it detects
+the setting). Titles containing `/` are refused with a warning instead
+of opening a buffer that could never round-trip (namespaces are out of
+scope for v0.1, see |logseq-intro|).
 
 ==============================================================================
 10. MULTIPLE GRAPHS                               *logseq-multigraph*
@@ -291,7 +297,7 @@ single-graph v0.1. >lua
 Graphs are auto-discovered by scanning for `logseq/config.edn` or
 `pages/` + `journals/` siblings. Hidden directories are skipped,
 symlinks are not followed, and missing scan dirs scan as empty. The
-scan runs on demand (picker open, |:checkhealth|) — never at startup,
+scan runs on demand (picker open, `:checkhealth`) — never at startup,
 so there is no cache to invalidate.
 
 The picker lists `graph_path` plus every discovered graph as
@@ -328,6 +334,43 @@ index, matching the facade's out-of-scope refusal (see
    own backlink.
 
 ==============================================================================
+12. TODO LISTS                                          *logseq-todos*
+
+`:LogseqTodos`, `:LogseqTodosView`, and `:LogseqCycleTodo` share one
+task vocabulary: uppercase Logseq markers only (`TODO`, `DOING`, `NOW`,
+`LATER`, `IN-PROGRESS`, `WAIT`, `WAITING`, `DONE`, `CANCELLED`,
+`CANCELED`), `-`/`*` bullets, one line per task. Numbered lists,
+priorities (`[#A]`), and SCHEDULED:/DEADLINE: metadata are plain text
+(out of scope for v1). All lists are read-only except single-line state
+cycling.
+
+|:LogseqCycleTodo| rotates the `- MARKER` on the cursor line through
+|logseq-config| `todo_cycles` (default `TODO -> DOING -> DONE`, wrapping
+`DONE -> TODO`; the first chain containing the marker wins, so
+`LATER -> NOW -> DONE` rejoins the main chain at DONE). A marker in no
+chain warns and leaves the line alone. It works in any modifiable
+buffer (warns otherwise), edits in a single undo step, and keeps the
+cursor. Custom chains replace the defaults wholesale and may only use
+canonical markers; other entries are skipped at cycle time and reported
+by `:checkhealth` (warn-only, never hard errors).
+
+==============================================================================
+13. SMART ACTION                                      *logseq-smartaction*
+
+|:LogseqSmartAction| (buffer-local `<CR>` in graph files) picks by
+line: a `[[link]]` / `#[[link]]` / `#tag` under the cursor is followed
+(link-first, so a link inside a `- TODO` line follows the link), else a
+`- MARKER` task line is cycled via |:LogseqCycleTodo|, else the cursor
+moves down one line (plain `<CR>` motion, silent at the last line).
+|:LogseqNextLink| / |:LogseqPrevLink| (buffer-local `]o` / `[o`) jump
+to the start of the next/previous link — strict, so a cursor sitting on
+a link moves on; silent no-ops at the ends with no wrap-around. Unlike
+obsidian.nvim there is no heading/fold handling (`za`) and no tag
+picker. To rebind, remove the buffer-local key first
+(`:nunmap <buffer> <CR>`) and map the |logseq-mappings| targets
+yourself.
+
+==============================================================================
 14. COMPLETION                                    *logseq-completion*
 
 Inside a graph, typing `[[`, `#[[`, or `#tag` pops page completion:
@@ -339,7 +382,7 @@ alphabetical within each tier; an empty `[[` offers everything (up to
 type — case-insensitive, so lowercase `theme` leaves only
 `Theme`-like titles — and dismisses itself when the brackets close or
 nothing matches. Manual completion always works
-with `CTRL-X CTRL-O` (|i_CTRL-X_CTRL-O|); `completion_auto = false`
+with `CTRL-X CTRL-O`; `completion_auto = false`
 keeps only the manual trigger. The menu takes over `omnifunc` unless
 you set your own (only a stock `htmlcomplete` value is replaced). The
 ftplugin also appends `noselect,noinsert` to buffer-local `completeopt`

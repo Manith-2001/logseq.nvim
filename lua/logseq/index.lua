@@ -9,6 +9,8 @@
 --- Missing dirs scan as empty (like list_pages), never an error.
 local graph = require('logseq.graph')
 local parser = require('logseq.parser')
+local config = require('logseq.config')
+local page = require('logseq.page')
 
 local M = {}
 
@@ -23,6 +25,7 @@ local M = {}
 ---@field back table<string, string[]> dst title -> sorted src titles
 ---@field nodes table<string, LogseqIndexNode> every known title
 ---@field stats table edge/node counts {pages, journals, dangling, edges}
+---@field io table {unreadable = string[]} paths that could not be read
 
 --- Trim surrounding whitespace like Logseq page names. Returns nil for
 --- non-string or blank input (blank links like `[[]]` are never edges).
@@ -39,36 +42,30 @@ function M.normalize(text)
   return name
 end
 
----@param title string
----@return boolean true when the title is namespace-scoped (contains `/`)
-local function is_namespace(title)
-  return title:find('/', 1, true) ~= nil
-end
-
+--- Read one file's lines. Unreadable files return nil + err instead of a
+--- silent {} (audit IO-01); build collects them into idx.io.unreadable.
 ---@param path string
----@return string[] lines, or {} when unreadable
+---@return string[]|nil lines
+---@return string|nil err
 local function read_lines(path)
   local ok, lines = pcall(vim.fn.readfile, path)
   if not ok or type(lines) ~= 'table' then
-    return {}
+    return nil, ('unreadable: %s'):format(path)
   end
-  return lines
+  return lines, nil
 end
 
---- Build the full link index for root. opts passes through to
---- graph.list_pages() ({pages_dir=, journals_dir=} overrides, used by tests).
----@param root string absolute graph root
----@param opts table|nil
+--- Core builder over already-listed page items (shared by build and
+--- build_guarded so the guarded path never lists the graph twice).
+---@param items LogseqPageItem[]
 ---@return LogseqGraphIndex
-function M.build(root, opts)
-  assert(type(root) == 'string' and root ~= '', 'index.build: root required')
-  local items = graph.list_pages(root, opts)
-
+local function build_from(items)
   ---@type table<string, table<string, boolean>>
   local fwd_sets = {}
   ---@type table<string, LogseqIndexNode>
   local nodes = {}
   local pages, journals = 0, 0
+  local unreadable = {}
 
   for _, item in ipairs(items) do
     if nodes[item.title] == nil then
@@ -82,11 +79,17 @@ function M.build(root, opts)
     if fwd_sets[item.title] == nil then
       fwd_sets[item.title] = {}
     end
-    for _, line in ipairs(read_lines(item.path)) do
-      for _, link in ipairs(parser.links_in_line(line)) do
-        local target = M.normalize(link.text)
-        if target ~= nil and not is_namespace(target) then
-          fwd_sets[item.title][target] = true
+    -- CHANGED (IO-01): unreadable files are collected, not silently empty.
+    local lines, err = read_lines(item.path)
+    if lines == nil then
+      table.insert(unreadable, item.path)
+    else
+      for _, line in ipairs(lines) do
+        for _, link in ipairs(parser.links_in_line(line)) do
+          local target = M.normalize(link.text)
+          if target ~= nil and not page.is_namespace(target) then
+            fwd_sets[item.title][target] = true
+          end
         end
       end
     end
@@ -141,12 +144,59 @@ function M.build(root, opts)
     end
   end
 
+  -- CHANGED: the IO report rides on the index value (single return, no
+  -- churn at the many existing build() call sites).
   return {
     forward = forward,
     back = back,
     nodes = nodes,
     stats = { pages = pages, journals = journals, dangling = dangling, edges = edges },
+    io = { unreadable = unreadable },
   }
+end
+
+--- Build the full link index for root. opts passes through to
+--- graph.list_pages() ({pages_dir=, journals_dir=} overrides, used by tests).
+--- Unreadable files are excluded from edges but listed in idx.io.unreadable
+--- (audit IO-01) — callers decide whether to warn.
+---@param root string absolute graph root
+---@param opts table|nil
+---@return LogseqGraphIndex
+function M.build(root, opts)
+  assert(type(root) == 'string' and root ~= '', 'index.build: root required')
+  return build_from(graph.list_pages(root, opts))
+end
+
+--- Guarded build for EVERY interactive path (audit PERF-01): the size
+--- policy lives at the index-construction boundary, not in selected
+--- callers. Graphs over cfg.graph_max_files build nothing and return
+--- nil + err; callers notify with M.too_large_message(). opts passes
+--- through to graph.list_pages() like build().
+---@param root string absolute graph root
+---@param opts table|nil
+---@return LogseqGraphIndex|nil idx nil when over the limit
+---@return table|nil err { kind = 'too_large', count = integer, max = integer }
+function M.build_guarded(root, opts)
+  assert(type(root) == 'string' and root ~= '', 'index.build_guarded: root required')
+  local items = graph.list_pages(root, opts)
+  local max = config.get().graph_max_files
+  if #items > max then
+    return nil, { kind = 'too_large', count = #items, max = max }
+  end
+  return build_from(items), nil
+end
+
+--- Shared warning text for a too_large guard result: one policy message
+--- used by the facade and the graph-view controller alike, so the guard
+--- can never drift per-caller again.
+---@param count integer
+---@param max integer
+---@return string
+function M.too_large_message(count, max)
+  return ('logseq.nvim: graph too large (%d files > %d graph_max_files); raise graph_max_files to explore it'):format(
+    count,
+    max
+  )
 end
 
 --- Sorted forward links of title, or {} when unknown. Returns a copy.

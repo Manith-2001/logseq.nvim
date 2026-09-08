@@ -199,7 +199,7 @@ end
 --- Complete prefix against the graph: fresh list_pages() titles plus the
 --- cached dangling titles from index.build(), existing ranked before
 --- dangling. Graphs over graph_max_files fall back to pages only (one
---- WARN per root, like guard_size). opts.root overrides root resolution
+--- WARN per root, like the graph explorers). opts.root overrides root resolution
 --- (used by tests); opts.items injects items directly (used by tests);
 --- opts.limit truncates after ranking (the config completion_limit
 --- arrives this way). Nil-safe.
@@ -249,8 +249,12 @@ function M.complete(prefix, opts)
       local cached = dangling_cache[root]
       if cached == nil then
         cached = {}
-        local ok, idx = pcall(index_mod.build, root)
-        if ok and idx ~= nil and type(idx.nodes) == 'table' then
+        -- index.build never raises for a valid root (its asserts are
+        -- programmer errors); unreadable files land in idx.io and are
+        -- deliberately NOT notified here (audit ERR-01: completion is
+        -- advisory and must not interrupt typing with warnings).
+        local idx = index_mod.build(root)
+        if idx ~= nil and type(idx.nodes) == 'table' then
           for title, node in pairs(idx.nodes) do
             if not seen[title] and type(node) == 'table' and node.exists == false then
               seen[title] = true
@@ -288,6 +292,18 @@ function M.menu(item)
     return '● ' .. item.kind
   end
   return '○ new'
+end
+
+--- Popup menu rows for items — one shaper so manual (omnifunc) and live
+--- (refresh) popups can never diverge in presentation (audit DRY-06).
+---@param items LogseqCompleteItem[]
+---@return table[] {word=, menu=} dicts for omnifunc / vim.fn.complete
+local function popup_rows(items)
+  local out = {}
+  for _, item in ipairs(items) do
+    table.insert(out, { word = item.title, menu = M.menu(item) })
+  end
+  return out
 end
 
 --- Current buffer line + 1-based cursor col, or nil outside a buffer.
@@ -338,11 +354,7 @@ function M.omnifunc(findstart, base)
   if findstart == 1 then
     return match.startcol - 1
   end
-  local out = {}
-  for _, item in ipairs(M.complete_at_cursor()) do
-    table.insert(out, { word = item.title, menu = M.menu(item) })
-  end
-  return out
+  return popup_rows(M.complete_at_cursor())
 end
 
 --- Feed <C-x><C-o> as typed keys (noremap): the auto-popup re-enters
@@ -436,11 +448,7 @@ function M.refresh()
     feed_abort()
     return true
   end
-  local words = {}
-  for _, item in ipairs(items) do
-    table.insert(words, { word = item.title, menu = M.menu(item) })
-  end
-  vim.fn.complete(match.startcol, words)
+  vim.fn.complete(match.startcol, popup_rows(items))
   return true
 end
 

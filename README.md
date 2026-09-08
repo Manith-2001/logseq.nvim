@@ -35,7 +35,12 @@ vim.g.logseq = { graph_path = '~/dev/notes_logseq' }
 ```
 
 No `setup()` call required. `require('logseq').setup(opts)` exists only to
-merge options from Lua. Precedence: defaults < `vim.g.logseq` < `setup(opts)`.
+merge options from Lua: keys present in `opts` merge over any previous
+`setup()` call and over `vim.g.logseq`; calling `setup()` with no arguments
+is a no-op. Invalid option types/values raise an error and leave the
+previous configuration untouched. Keys cannot be unset via `setup()`
+(restart to clear; `:checkhealth logseq` shows what is set). Precedence:
+defaults < `vim.g.logseq` < `setup(opts)`.
 
 Then `:helptags ALL` (once, so `:help logseq` works) and `:checkhealth logseq`.
 
@@ -46,9 +51,10 @@ Then `:helptags ALL` (once, so `:help logseq` works) and `:checkhealth logseq`.
 | `:LogseqFind`        | Pick a page/journal via Telescope and open it             |
 | `:LogseqFollow`      | Open the `[[link]]`, `#[[link]]`, or `#tag` under cursor  |
 | `:LogseqToday`       | Open today's journal (`journals/YYYY_MM_DD.md`)           |
-| `:LogseqNew [title]` | Open a page; prompts for the title when omitted           |
+| `:LogseqNew` [title] | Open a page; prompts for the title when omitted           |
 | `:LogseqSwitchGraph` | Pick the active graph (multi-graph switching, see below)  |
-| `:LogseqGraph [title]` | Explore a page's links (Linked + Backlinks) in a scratch buffer |
+| `:LogseqGraph` [title] | Explore a page's links (Linked + Backlinks) in a scratch buffer |
+| `:LogseqGraphAll`   | Overview of the whole graph (counts + picker to any page's local view) |
 | `:LogseqTodos`       | Pick a `- TODO` task via Telescope and jump to its line   |
 | `:LogseqTodosView`   | See all tasks grouped by file (`<CR>` jumps, `q` closes)  |
 | `:LogseqCycleTodo`   | Cycle the `- MARKER` on the cursor line to its next state |
@@ -65,7 +71,6 @@ never clobbered (each key is guarded independently, remove with
 `:nunmap <buffer> <CR>`). Graph buffers also get `[[ ]]` completion:
 an auto-popup while typing plus manual `<C-x><C-o>` (see Completion).
 Suggested opt-in binds:
-| `:LogseqGraphAll` | Overview of the whole graph (counts + picker to any page's local view) |
 
 ```lua
 vim.keymap.set('n', 'gf', '<Plug>(LogseqFollow)')
@@ -75,7 +80,8 @@ vim.keymap.set('n', '<C-CR>', '<Plug>(LogseqCycleTodo)')
 
 Lua API mirrors the commands: `require('logseq').find_files()`,
 `.follow_link()`, `.today()`, `.new_page(title)`, `.switch_graph()`,
-`.graph_view(opts)` (`{title=, depth=1|2, root=}`), `.todos()`,
+`.graph_view(opts)` (`{title=, depth=1|2, root=}`), `.graph_view_all()`
+(`{root=}`), `.todos()`,
 `.todos_view()` (`{root=}`), `.cycle_todo()`, `.smart_action(opts)`
 (`{root=}`), `.nav_link('next' | 'prev')`.
 
@@ -87,7 +93,6 @@ Lua API mirrors the commands: `require('logseq').find_files()`,
   pages_dir = 'pages',
   journals_dir = 'journals',
   journal_format = '%Y_%m_%d', -- os.date format for journal filenames
-  picker = 'telescope',        -- vim.ui.select fallback is automatic
   graphs_dirs = {},            -- parent dirs scanned for graphs (multi-graph)
   graphs_depth = 2,            -- how deep to scan under each dir
   graph_depth = 1,             -- :LogseqGraph explorer depth (1 or 2 hops)
@@ -124,7 +129,10 @@ main chain at `DONE`). A marker in no chain warns and leaves the line
 alone. It works in any modifiable buffer, edits in a single undo step,
 and keeps the cursor. Custom chains replace the defaults wholesale
 (same precedence as everything else: defaults < `vim.g.logseq` <
-`setup(opts)`):
+`setup(opts)`). Chains may reorder or subset the canonical Logseq markers
+(`TODO`, `DOING`, `NOW`, `LATER`, `IN-PROGRESS`, `WAIT`, `WAITING`, `DONE`,
+`CANCELLED`, `CANCELED`); other words never cycle (the parser recognizes
+canonical markers only) and are reported by `:checkhealth logseq`.
 
 ```lua
 vim.g.logseq = { todo_cycles = { { 'TODO', 'DONE' } } } -- skip DOING
@@ -226,10 +234,12 @@ Markdown buffers inside a graph get buffer-local treatment only
 ## Semantics
 
 - Titles map to filenames verbatim: `Machine Learning` ↔
-  `pages/Machine Learning.md`. No `___`/legacy translation is applied: the
-  reference graph sets no `:file-name-format` and contains no namespace
-  pages, so inventing one would diverge from Logseq. Titles containing `/`
-  are refused with a warning (namespaces are out of scope for v0.1).
+  `pages/Machine Learning.md`. `config.edn` `:file-name-format` is NOT
+  parsed: only verbatim titles are supported; a graph declaring a
+  non-default format (e.g. `:triple-lowbar`) may resolve or create the
+  wrong files (`:checkhealth logseq` warns when it detects the setting).
+  Titles containing `/` are refused with a warning (namespaces are out of
+  scope for v0.1).
 - Lazy opens never create files. `:w` on a still-empty dangling page is
   refused with a warning; the file appears only after content + `:w`.
 
